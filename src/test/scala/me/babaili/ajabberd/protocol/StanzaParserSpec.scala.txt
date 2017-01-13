@@ -1,0 +1,80 @@
+package me.babaili.ajabberd.protocol
+
+import org.scalatest.{FlatSpec, FunSpec, Matchers}
+
+/**
+  * Created by chengyongqiao on 11/01/2017.
+  */
+class StanzaParserSpec extends FunSpec with Matchers {
+
+    describe("given a stanza parser") {
+        val stanzaParser = new StanzaParser()
+
+        describe("add <stream:stream to='example.com' " +
+            "xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>  ") {
+
+            it("should emit a stream stanza") {
+                val streamString = "<stream:stream to='example.com'" +
+                    "xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>  "
+
+                stanzaParser.append(streamString)
+
+                val stanza = stanzaParser.query()
+
+                val s = stanza.getOrElse(NilStanza)
+
+                s.tag should equal(Stanza.stream)
+
+                val stream = s.asInstanceOf[Stream]
+                stream.to should equal("example.com")
+            }
+        }
+    }
+
+    describe("given a stanza parser") {
+        val stanzaParser = new StanzaParser()
+
+        describe("add <stream:stream to='example.com' " +
+            "xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' version='1.0'> then query half  ") {
+
+            it("should emit a stream common stanza") {
+                val streamString = "<stream:stream to='example.com'" +
+                    "xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>  "
+
+                stanzaParser.append(streamString)
+
+                val stanza = stanzaParser.queryHalfCommonStanza()
+                val commonStanza = stanza.getOrElse(NilCommonStanza)
+                commonStanza.tag should equal(Stanza.stream)
+
+            }
+        }
+    }
+
+
+    describe("given a stanza parser") {
+        val stanzaParser = new StanzaParser()
+
+        describe("add <stream:features>  \n    <starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'>  \n "+
+                " <required/>  \n    </starttls>  \n    <mechanisms xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>  \n " +
+                " <mechanism>DIGEST-MD5</mechanism>  \n        <mechanism>PLAIN</mechanism>  \n    " +
+                " <mechanism>EXTERNAL</mechanism>  \n    </mechanisms>  \n</stream:features>  then query common stanza " ) {
+
+            it("should emit a full common stanza") {
+                val streamFatureString = "<stream:features>  \n    <starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'>  \n "+
+                    " <required/>  \n    </starttls>  \n    <mechanisms xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>  \n " +
+                    " <mechanism>DIGEST-MD5</mechanism>  \n        <mechanism>PLAIN</mechanism>  \n    " +
+                    " <mechanism>EXTERNAL</mechanism>  \n    </mechanisms>  \n</stream:features>  "
+
+                println("==================== query full common stanza")
+                stanzaParser.append(streamFatureString)
+                val stanza = stanzaParser.queryFullCommonStanza().getOrElse(NilCommonStanza)
+                stanza.tag should equal(Stanza.features)
+                stanza.attributes.isEmpty should equal(true)
+                stanza.children.isEmpty should equal(false)
+                stanza.children.get.size should equal(2)
+            }
+
+        }
+    }
+}
