@@ -21,5 +21,8 @@ libraryDependencies ++= Seq(
 libraryDependencies += "xmlpull" % "xmlpull" % "1.1.3.1"
 //
 libraryDependencies += "net.sf.kxml" % "kxml2" % "2.2.2"
+//
+libraryDependencies += "com.fasterxml" % "aalto-xml" % "1.0.0"
+
 
 
