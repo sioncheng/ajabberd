@@ -2,11 +2,11 @@ package me.babaili.ajabberd.net
 
 import javax.xml.stream.events.XMLEvent
 
-import akka.actor.{Actor, ActorRef}
+import akka.actor.{Actor, ActorRef, Props}
 import akka.io.Tcp
 import akka.util.ByteString
 import me.babaili.ajabberd.xml.XmlTokenizer
-import me.babaili.ajabberd.util.Logger
+import com.typesafe.scalalogging.Logger
 
 /**
   * Created by chengyongqiao on 03/02/2017.
@@ -15,9 +15,12 @@ import me.babaili.ajabberd.util.Logger
 object TcpConnectionHandler {
     val EXPECT_START_STREAM = 0
     val EXPECT_START_TLS = 1
+    val EXPECT_PROCESS_TLS = 2
+
+    val logger = Logger("me.babaili.ajabberd.net.TcpConnectionHandler")
 }
 
-class TcpConnectionHandler(connection: ActorRef, tcpListener: ActorRef, name: String) extends Actor {
+class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
     import Tcp._
     import TcpConnectionHandler._
 
@@ -27,32 +30,41 @@ class TcpConnectionHandler(connection: ActorRef, tcpListener: ActorRef, name: St
 
     val xmlTokenizer = new XmlTokenizer()
 
+    var sslEngine: ActorRef = null
+
     def receive = {
-        case Received(data) =>
+        case d @ Received(data) =>
             //
-            val result = xmlTokenizer.decode(data.toArray)
-            result match {
-                case Left(xmlEvents) =>
-                    //
-                    status match {
-                        case EXPECT_START_STREAM => expectStartStream(xmlEvents)
-                        case EXPECT_START_TLS => expectStartTls(xmlEvents)
-                        case x : Any => Logger.debug(logTitle, "what status ?" + x.toString())
+            logger.debug(s"status ${status}")
+            status match {
+                case EXPECT_PROCESS_TLS =>
+                    sslEngine ! d
+                    logger.debug("forward receive data to ssl engine")
+                case _ =>
+                    val result = xmlTokenizer.decode(data.toArray)
+                    result match {
+                        case Left(xmlEvents) =>
+                            //
+                            status match {
+                                case EXPECT_START_STREAM => expectStartStream(xmlEvents)
+                                case EXPECT_START_TLS => expectStartTls(xmlEvents)
+                                case x : Any => logger.debug("what status ?" + x.toString())
+                            }
+                        case Right(exception) =>
+                            //
+                            processXmlStreamException(exception)
                     }
-                case Right(exception) =>
-                    //
-                    processXmlStreamException(exception)
             }
 
         case PeerClosed =>
             //
-            Logger.debug(logTitle, "peer closed")
+            logger.debug(logTitle, "peer closed")
             processClose()
         case Closed =>
-            Logger.debug(logTitle, "closed")
+            logger.debug(logTitle, "closed")
             processClose()
         case x =>
-            Logger.debug(logTitle, "what? " + x.toString())
+            logger.debug(logTitle, "what? " + x.toString())
     }
 
     def expectStartStream(xmlEvents: List[XMLEvent]): Unit = {
@@ -60,45 +72,67 @@ class TcpConnectionHandler(connection: ActorRef, tcpListener: ActorRef, name: St
 
         if (!xmlEvents.head.isStartDocument()) {
             val errorMessage = "first xml event is not start document while expect start stream"
-            Logger.debug(logTitle, errorMessage)
+            logger.debug(logTitle, errorMessage)
             processXmlStreamException(XmlStreamException(errorMessage))
         } else {
             val tail = xmlEvents.tail
             if (!tail.head.isStartElement()){
                 val errorMessage = "second xml event is not start element while expect start stream"
-                Logger.debug(logTitle, errorMessage)
+                logger.debug(logTitle, errorMessage)
                 processXmlStreamException(XmlStreamException(errorMessage))
             } else {
                 val localPort = tail.head.asStartElement().getName().getLocalPart()
                 if (! "stream".equalsIgnoreCase(localPort)){
                     val errorMessage = "second xml event is not stream while expect start stream"
-                    Logger.debug(logTitle, errorMessage)
+                    logger.debug(logTitle, errorMessage)
                     processXmlStreamException(XmlStreamException(errorMessage))
                 } else {
                     status = EXPECT_START_TLS
                     val stream = "<?xml version=\"1.0\"?>" +
                         "<stream:stream from=\"bleach.com\" id=\"someid\" xmlns=\"jabber:client\" " +
                         " xmlns:stream=\"http://etherx.jabber.org/streams\" version=\"1.0\">"
-                    connection ! Write(ByteString.fromString(stream))
+                    sender() ! Write(ByteString.fromString(stream))
                     val startTls = "<stream:features> " +
-                        " <starttls xmlns=\"urn:ietf:params:xml:ns: xmpp-tls\"></starttls> " +
+                        " <starttls xmlns=\"urn:ietf:params:xml:ns:xmpp-tls\"></starttls> " +
+                        " <mechanisms xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>" +
+                        "    <mechanism>DIGEST-MD5</mechanism> " +
+                        "    <mechanism>PLAIN</mechanism> " +
+                        " </mechanisms> " +
                         " </stream:features>"
-                    connection ! Write(ByteString.fromString(startTls))
-                    Logger.debug(logTitle, "accept start stream and response features")
+                    sender() ! Write(ByteString.fromString(startTls))
+                    logger.debug(logTitle, "accept start stream and response features")
                 }
             }
         }
     }
 
     def expectStartTls(xmlEvents: List[XMLEvent]): Unit = {
+        val head = xmlEvents.head
+        if (!head.isStartElement()) {
+            val errorMessage = "first xml event is not start document while expect start tls"
+            logger.debug(errorMessage)
+            processXmlStreamException(XmlStreamException(errorMessage))
+        } else {
+            val name = head.asStartElement().getName().getLocalPart()
+            if (! "starttls".equalsIgnoreCase(name)) {
+                val errorMessage = "name of first xml event is not start tls document while expect start tls"
+                logger.debug(errorMessage)
+                processXmlStreamException(XmlStreamException(errorMessage))
+            } else {
+                val proceed = "<proceed xmlns=\"urn:ietf:params:xml:ns:xmpp-tls\"/>"
+                logger.debug(proceed)
+                sender() ! Write(ByteString.fromString(proceed))
+                status = EXPECT_PROCESS_TLS
+                sslEngine = context.actorOf(Props(classOf[SslEngine]))
+            }
+        }
 
     }
 
     def processXmlStreamException(e: Exception): Unit = {
         //
-        Logger.error(logTitle,
-            "tcp connection handler received wrong xml data: " + e.getMessage())
-        connection ! Close //will receive a closed message
+        logger.error("tcp connection handler received wrong xml data: " + e.getMessage(), e)
+        sender() ! Close //will receive a closed message
     }
 
     def processClose(): Unit = {
