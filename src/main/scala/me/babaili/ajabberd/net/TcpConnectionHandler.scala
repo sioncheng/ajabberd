@@ -26,7 +26,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
 
     var status = EXPECT_START_STREAM
 
-    val logTitle = "tcp connection handler " + name
+    val logTitle = "tcp connection handler " + name + " "
 
     val xmlTokenizer = new XmlTokenizer()
 
@@ -58,13 +58,13 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
 
         case PeerClosed =>
             //
-            logger.debug(logTitle, "peer closed")
+            logger.debug(logTitle + "peer closed")
             processClose()
         case Closed =>
-            logger.debug(logTitle, "closed")
+            logger.debug(logTitle + "closed")
             processClose()
         case x =>
-            logger.debug(logTitle, "what? " + x.toString())
+            logger.debug(logTitle + "what? " + x.toString())
     }
 
     def expectStartStream(xmlEvents: List[XMLEvent]): Unit = {
@@ -100,7 +100,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
                         " </mechanisms> " +
                         " </stream:features>"
                     sender() ! Write(ByteString.fromString(startTls))
-                    logger.debug(logTitle, "accept start stream and response features")
+                    logger.debug(logTitle + "accept start stream and response features")
                 }
             }
         }

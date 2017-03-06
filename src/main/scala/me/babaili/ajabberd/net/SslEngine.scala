@@ -26,21 +26,19 @@ class SslEngine extends Actor {
     import SslEngine._
 
     val password = "123456".toCharArray
-    val keyStore = KeyStore.getInstance("jks")
-    val inServer = getClass().getResourceAsStream("server.keystore")
+    val keyStore = KeyStore.getInstance("JKS")
+    val inServer = getClass().getResourceAsStream("keystore")
     keyStore.load(inServer, password)
 
-    val trustKeyStore = KeyStore.getInstance("jks")
-    val inCaTrust = getClass().getResourceAsStream("ca-trust.keystore")
+    val trustKeyStore = KeyStore.getInstance("JKS")
+    val inCaTrust = getClass().getResourceAsStream("truststore")
     trustKeyStore.load(inCaTrust, password)
 
-    val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
+    val keyManagerFactory = KeyManagerFactory.getInstance("SunX509")
     keyManagerFactory.init(keyStore, password)
-    logger.debug(s"KeyManagerFactory.getDefaultAlgorithm ${KeyManagerFactory.getDefaultAlgorithm()}")
 
-    val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+    val trustManagerFactory = TrustManagerFactory.getInstance("SunX509")
     trustManagerFactory.init(trustKeyStore)
-    logger.debug(s"TrustManagerFactory.getDefaultAlgorithm ${TrustManagerFactory.getDefaultAlgorithm()}")
 
     val myX509TrustManager = new X509TrustManager {
         override def getAcceptedIssuers = {
@@ -60,7 +58,7 @@ class SslEngine extends Actor {
     trustManagers(0) = myX509TrustManager
 
     val sslContext = SSLContext.getInstance("TLSv1")
-    sslContext.init(keyManagerFactory.getKeyManagers(), trustManagers, null)
+    sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), null)
 
     val sslEngine = sslContext.createSSLEngine()
     sslEngine.setUseClientMode(false)
@@ -99,7 +97,7 @@ class SslEngine extends Actor {
     sslEngine.setWantClientAuth(true)
     sslEngine.setEnabledCipherSuites(sslEngine.getSupportedCipherSuites())
     sslEngine.beginHandshake()
-    doHandshake()
+    //doHandshake()
 
 
     def receive = {
@@ -203,6 +201,7 @@ class SslEngine extends Actor {
                                 //shouldLoop = false
                             case Status.CLOSED =>
                                 //
+                                shouldLoop = false
                                 logger.debug("closed")
 
                         }
@@ -216,33 +215,38 @@ class SslEngine extends Actor {
                     myAppData.put("".getBytes())
                     myAppData.flip()
 
-                    try {
-                        result = sslEngine.wrap(myAppData, myNetData)
-                        handshakeStatus = result.getHandshakeStatus()
-                    } catch {
-                        case e: SSLException =>
-                            logger.error("ssl exception during do handshake", e)
-                            handshakeStatus = sslEngine.getHandshakeStatus()
-                            shouldLoop = false
-                    }
-
-                    if (shouldLoop) {
-                        result.getStatus() match {
-                            case Status.OK =>
-                                logger.debug("ok")
-                                myNetData.flip()
-                                logger.debug(s"my netdata limit ${myNetData.limit()}")
-                            case Status.BUFFER_OVERFLOW =>
-                                //
-                                logger.debug("buffer overflow")
-                            case Status.BUFFER_UNDERFLOW =>
-                                //
-                                logger.debug("buffer underflow")
-                            case Status.CLOSED =>
-                                //
-                                logger.debug("closed")
-
+                    if (myAppData.limit() > 0) {
+                        try {
+                            result = sslEngine.wrap(myAppData, myNetData)
+                            handshakeStatus = result.getHandshakeStatus()
+                        } catch {
+                            case e: SSLException =>
+                                logger.error("ssl exception during do handshake", e)
+                                handshakeStatus = sslEngine.getHandshakeStatus()
+                                shouldLoop = false
                         }
+
+                        if (shouldLoop) {
+                            result.getStatus() match {
+                                case Status.OK =>
+                                    logger.debug("ok")
+                                    myNetData.flip()
+                                    logger.debug(s"my netdata limit ${myNetData.limit()}")
+                                case Status.BUFFER_OVERFLOW =>
+                                    //
+                                    logger.debug("buffer overflow")
+                                case Status.BUFFER_UNDERFLOW =>
+                                    //
+                                    logger.debug("buffer underflow")
+                                case Status.CLOSED =>
+                                    //
+                                    shouldLoop = false
+                                    logger.debug("closed")
+
+                            }
+                        }
+                    } else {
+                        shouldLoop = false
                     }
 
                 case HandshakeStatus.NEED_TASK =>
