@@ -7,8 +7,9 @@ import javax.net.ssl._
 import javax.net.ssl.SSLEngineResult.HandshakeStatus
 import javax.net.ssl.SSLEngineResult.Status
 
-import akka.actor.Actor
+import akka.actor.{Actor, ActorRef}
 import akka.io.Tcp.Received
+import akka.util.ByteString
 import com.typesafe.scalalogging.Logger
 
 
@@ -17,6 +18,7 @@ import com.typesafe.scalalogging.Logger
   */
 
 object SslEngine {
+    case class WrappedData(bs: ByteString)
     case class Proceed()
     val logger = Logger("me.babaili.ajabberd.net.SslEngine")
 }
@@ -27,7 +29,7 @@ class SslEngine extends Actor {
 
     val password = "123456".toCharArray
     val keyStore = KeyStore.getInstance("JKS")
-    val inServer = getClass().getResourceAsStream("keystore")
+    val inServer = getClass().getResourceAsStream("/netty/sChat.jks")
     keyStore.load(inServer, password)
 
     val trustKeyStore = KeyStore.getInstance("JKS")
@@ -57,11 +59,34 @@ class SslEngine extends Actor {
     val trustManagers = new Array[TrustManager](1)
     trustManagers(0) = myX509TrustManager
 
-    val sslContext = SSLContext.getInstance("TLSv1")
-    sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), null)
+    val sslContext = SSLContext.getInstance("TLSv1.2")
+    sslContext.init(keyManagerFactory.getKeyManagers(), trustManagers, null)
 
     val sslEngine = sslContext.createSSLEngine()
     sslEngine.setUseClientMode(false)
+
+
+
+    var handshakeStatus: HandshakeStatus = null
+    var assumeHasPeerNetData = true
+    var assumeHasMyAppData = true
+
+
+    logger.debug("Ssl Engine initialization")
+
+    logger.debug("supported cipher suites")
+    sslEngine.getSupportedCipherSuites().foreach(println _)
+    logger.debug("enabled cipher suites")
+    sslEngine.getEnabledCipherSuites().foreach(println _)
+    logger.debug("supported protocols")
+    sslEngine.getSupportedProtocols().foreach(println _)
+    logger.debug("enabled protocols")
+    sslEngine.getEnabledProtocols().foreach(println _)
+
+    sslEngine.setUseClientMode(false)
+    //sslEngine.setWantClientAuth(true)
+    //sslEngine.setEnabledCipherSuites(sslEngine.getSupportedCipherSuites())
+    sslEngine.beginHandshake()
 
     val sslSession = sslEngine.getSession()
 
@@ -77,28 +102,8 @@ class SslEngine extends Actor {
     logger.debug(s"application buffer size ${sslSession.getApplicationBufferSize()}")
     logger.debug(s"packet buffer size ${sslSession.getPacketBufferSize()}")
 
-    var handshakeStatus: HandshakeStatus = null
-    var assumeHasPeerNetData = true
-    var assumeHasMyAppData = true
 
-
-    logger.debug("Ssl Engine initialization")
-    /*
-    logger.debug("supported cipher suites")
-    sslEngine.getSupportedCipherSuites().foreach(println _)
-    logger.debug("supported protocols")
-    sslEngine.getSupportedProtocols().foreach(println _)
-    logger.debug("enabled cipher suites")
-    sslEngine.getEnabledCipherSuites().foreach(println _)
-    logger.debug("enabled protocols")
-    sslEngine.getEnabledProtocols().foreach(println _)
-    */
-    sslEngine.setUseClientMode(false)
-    sslEngine.setWantClientAuth(true)
-    sslEngine.setEnabledCipherSuites(sslEngine.getSupportedCipherSuites())
-    sslEngine.beginHandshake()
-    //doHandshake()
-
+    var tcpConnectionHandler: ActorRef = null
 
     def receive = {
         case Received(data) =>
@@ -106,6 +111,7 @@ class SslEngine extends Actor {
             logger.debug(s"peer net data ${peerNetData.position()} ${peerNetData.limit()} ${peerNetData.capacity()}")
             //peerNetData.compact()
             //data.foreach(b => peerNetData.put(b))
+            tcpConnectionHandler = sender()
             val dest = new Array[Byte](data.length)
             data.copyToArray(dest)
             peerNetData.put(dest)
@@ -152,7 +158,6 @@ class SslEngine extends Actor {
         handshakeStatus = sslEngine.getHandshakeStatus()
 
         var shouldLoop: Boolean = true
-
 
         while(shouldLoop) {
             handshakeStatus match {
@@ -211,11 +216,8 @@ class SslEngine extends Actor {
                 case HandshakeStatus.NEED_WRAP =>
                     //
                     logger.debug("need wrap")
-                    myAppData.clear()
-                    myAppData.put("".getBytes())
-                    myAppData.flip()
 
-                    if (myAppData.limit() > 0) {
+                    myNetData.clear()
                         try {
                             result = sslEngine.wrap(myAppData, myNetData)
                             handshakeStatus = result.getHandshakeStatus()
@@ -232,6 +234,13 @@ class SslEngine extends Actor {
                                     logger.debug("ok")
                                     myNetData.flip()
                                     logger.debug(s"my netdata limit ${myNetData.limit()}")
+                                    if (myNetData.limit() <= 0) {
+                                        shouldLoop = false
+                                    } else {
+                                        val myData = new Array[Byte](myNetData.limit())
+                                        myNetData.get(myData)
+                                        tcpConnectionHandler ! WrappedData(ByteString.fromArray(myData))
+                                    }
                                 case Status.BUFFER_OVERFLOW =>
                                     //
                                     logger.debug("buffer overflow")
@@ -245,9 +254,6 @@ class SslEngine extends Actor {
 
                             }
                         }
-                    } else {
-                        shouldLoop = false
-                    }
 
                 case HandshakeStatus.NEED_TASK =>
                     //

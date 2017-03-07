@@ -24,13 +24,15 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
     import Tcp._
     import TcpConnectionHandler._
 
-    var status = EXPECT_START_STREAM
+    var status = EXPECT_PROCESS_TLS
 
     val logTitle = "tcp connection handler " + name + " "
 
     val xmlTokenizer = new XmlTokenizer()
 
+    var tcpConnection: ActorRef = null
     var sslEngine: ActorRef = null
+    sslEngine = context.actorOf(Props(classOf[SslEngine]))
 
     def receive = {
         case d @ Received(data) =>
@@ -38,8 +40,9 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
             logger.debug(s"status ${status}")
             status match {
                 case EXPECT_PROCESS_TLS =>
+                    tcpConnection = sender()
                     sslEngine ! d
-                    logger.debug("forward receive data to ssl engine")
+                    logger.debug(s"forward receive data to ssl engine")
                 case _ =>
                     val result = xmlTokenizer.decode(data.toArray)
                     result match {
@@ -63,6 +66,8 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
         case Closed =>
             logger.debug(logTitle + "closed")
             processClose()
+        case SslEngine.WrappedData(bs) =>
+            tcpConnection ! Write(bs)
         case x =>
             logger.debug(logTitle + "what? " + x.toString())
     }

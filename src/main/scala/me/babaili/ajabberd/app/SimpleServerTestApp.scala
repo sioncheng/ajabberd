@@ -9,17 +9,18 @@ import me.babaili.ajabberd.net.TcpListener
   */
 object SimpleServerTestApp extends App {
 
-  println("simple server test app")
+    println("simple server test app")
 
-  System.setProperty("javax.net.debug","all")
+    System.setProperty("javax.net.debug", "all")
+    System.setProperty("javax.net.ssl.trustStore", "trustStore")
 
-  val actorSystem = ActorSystem.create("simple-server-test")
-  val listener = actorSystem.actorOf(Props(classOf[TcpListener], "localhost", 6666))
+    val actorSystem = ActorSystem.create("simple-server-test")
+    val listener = actorSystem.actorOf(Props(classOf[TcpListener], "localhost", 6666))
 
 
-  Thread.sleep(3 * 60 * 1000)
+    Thread.sleep(3 * 60 * 1000)
 
-  actorSystem.terminate()
+    actorSystem.terminate()
 
 
 }
