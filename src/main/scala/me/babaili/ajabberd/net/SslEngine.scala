@@ -20,7 +20,9 @@ import com.typesafe.scalalogging.Logger
 object SslEngine {
     case class WrappedData(bs: ByteString)
     case class UnwrappedData(bs: ByteString)
+    case class FinishedHandshake()
     case class Proceed()
+    case class WrapRequest(bs: ByteString)
     val logger = Logger("me.babaili.ajabberd.net.SslEngine")
 }
 
@@ -75,6 +77,7 @@ class SslEngine extends Actor {
 
     logger.debug("Ssl Engine initialization")
 
+    /*
     logger.debug("supported cipher suites")
     sslEngine.getSupportedCipherSuites().foreach(println _)
     logger.debug("enabled cipher suites")
@@ -83,6 +86,7 @@ class SslEngine extends Actor {
     sslEngine.getSupportedProtocols().foreach(println _)
     logger.debug("enabled protocols")
     sslEngine.getEnabledProtocols().foreach(println _)
+    */
 
     sslEngine.setUseClientMode(false)
     sslEngine.beginHandshake()
@@ -118,6 +122,11 @@ class SslEngine extends Actor {
             } else {
                 unwrap()
             }
+        case WrapRequest(data) =>
+            val dest = new Array[Byte](data.length)
+            data.copyToArray(dest)
+            myAppData.put(dest)
+            wrap()
     }
 
     def unwrap() = {
@@ -154,6 +163,50 @@ class SslEngine extends Actor {
             logger.debug(s"hand shake status ${sslEngine.getHandshakeStatus()}")
         }
         peerNetData.compact()
+    }
+
+    def wrap() = {
+        var result: SSLEngineResult = null
+        var shouldLoop = true
+        myAppData.flip()
+        myNetData.clear()
+        try {
+            result = sslEngine.wrap(myAppData, myNetData)
+            handshakeStatus = result.getHandshakeStatus()
+            myAppData.compact()
+        } catch {
+            case e: SSLException =>
+                logger.error("ssl exception during do handshake", e)
+                handshakeStatus = sslEngine.getHandshakeStatus()
+                shouldLoop = false
+        }
+
+        if (shouldLoop) {
+            result.getStatus() match {
+                case Status.OK =>
+                    logger.debug("ok")
+                    myNetData.flip()
+                    logger.debug(s"my netdata limit ${myNetData.limit()}")
+                    if (myNetData.limit() <= 0) {
+                        shouldLoop = false
+                    } else {
+                        val myData = new Array[Byte](myNetData.limit())
+                        myNetData.get(myData)
+                        tcpConnectionHandler ! WrappedData(ByteString.fromArray(myData))
+                    }
+                case Status.BUFFER_OVERFLOW =>
+                    //
+                    logger.debug("buffer overflow")
+                case Status.BUFFER_UNDERFLOW =>
+                    //
+                    logger.debug("buffer underflow")
+                case Status.CLOSED =>
+                    //
+                    shouldLoop = false
+                    logger.debug("closed")
+
+            }
+        }
     }
 
     def doHandshake() = {
@@ -223,10 +276,12 @@ class SslEngine extends Actor {
                     //
                     logger.debug("need wrap")
 
+                    myAppData.flip()
                     myNetData.clear()
                         try {
                             result = sslEngine.wrap(myAppData, myNetData)
                             handshakeStatus = result.getHandshakeStatus()
+                            myAppData.compact()
                         } catch {
                             case e: SSLException =>
                                 logger.error("ssl exception during do handshake", e)
@@ -287,6 +342,11 @@ class SslEngine extends Actor {
             shouldLoop = shouldLoop && handshakeStatus != HandshakeStatus.NOT_HANDSHAKING
 
             logger.debug(s"should loop ? ${shouldLoop} ${handshakeStatus}")
+        }
+
+        if(finishedHandshake) {
+            tcpConnectionHandler ! FinishedHandshake()
+            logger.debug("tel tcp connection handler that finished handshake")
         }
     }
 

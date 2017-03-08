@@ -30,6 +30,14 @@ libraryDependencies += "com.fasterxml" % "aalto-xml" % "1.0.0"
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.1.7"
 //
 libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.5.0"
+// https://mvnrepository.com/artifact/org.igniterealtime.smack/smack-core
+libraryDependencies += "org.igniterealtime.smack" % "smack-core" % "4.1.9"
+// https://mvnrepository.com/artifact/org.igniterealtime.smack/smack-tcp
+libraryDependencies += "org.igniterealtime.smack" % "smack-tcp" % "4.1.9"
+// https://mvnrepository.com/artifact/org.igniterealtime.smack/smack-java7
+libraryDependencies += "org.igniterealtime.smack" % "smack-java7" % "4.1.9"
+
+
 
 
 

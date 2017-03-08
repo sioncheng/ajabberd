@@ -15,7 +15,7 @@ object SimpleServerTestApp extends App {
     System.setProperty("javax.net.ssl.trustStore", "trustStore")
 
     val actorSystem = ActorSystem.create("simple-server-test")
-    val listener = actorSystem.actorOf(Props(classOf[TcpListener], "localhost", 6666))
+    val listener = actorSystem.actorOf(Props(classOf[TcpListener], "localhost", 5222))
 
 
     Thread.sleep(3 * 60 * 1000)

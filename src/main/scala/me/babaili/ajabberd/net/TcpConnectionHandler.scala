@@ -1,6 +1,6 @@
 package me.babaili.ajabberd.net
 
-import javax.xml.stream.events.XMLEvent
+import javax.xml.stream.events.{StartElement, XMLEvent}
 
 import akka.actor.{Actor, ActorRef, Props}
 import akka.io.Tcp
@@ -16,6 +16,12 @@ object TcpConnectionHandler {
     val EXPECT_START_STREAM = 0
     val EXPECT_START_TLS = 1
     val EXPECT_PROCESS_TLS = 2
+    val EXPECT_NEW_STREAM = 3
+    val EXPECT_LOGIN = 4
+    val EXPECT_CHALLENGE = 5
+    val EXPECT_CHALLENGE_SUCCESS = 6
+    val EXPECT_BIND = 7
+    val EXPECT_SESSION = 8
 
     val logger = Logger("me.babaili.ajabberd.net.TcpConnectionHandler")
 }
@@ -39,10 +45,12 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
             tcpConnection = sender()
             logger.debug(s"status ${status}")
             status match {
-                case EXPECT_PROCESS_TLS =>
+                case EXPECT_PROCESS_TLS | EXPECT_NEW_STREAM |
+                     EXPECT_LOGIN | EXPECT_CHALLENGE | EXPECT_CHALLENGE_SUCCESS  |
+                     EXPECT_BIND | EXPECT_SESSION =>
                     sslEngine ! d
                     logger.debug(s"forward receive data to ssl engine")
-                case _ =>
+                case EXPECT_START_STREAM | EXPECT_START_TLS =>
                     val result = xmlTokenizer.decode(data.toArray)
                     result match {
                         case Left(xmlEvents) =>
@@ -50,12 +58,12 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
                             status match {
                                 case EXPECT_START_STREAM => expectStartStream(xmlEvents)
                                 case EXPECT_START_TLS => expectStartTls(xmlEvents)
-                                case x : Any => logger.debug("what status ?" + x.toString())
                             }
                         case Right(exception) =>
                             //
                             processXmlStreamException(exception)
                     }
+                case x : Any => logger.warn("what? in received" + x.toString())
             }
 
         case PeerClosed =>
@@ -67,11 +75,84 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
             processClose()
         case SslEngine.WrappedData(bs) =>
             tcpConnection ! Write(bs)
+            logger.debug("process tls wrap")
+        case SslEngine.FinishedHandshake() =>
+            status = EXPECT_NEW_STREAM
+            logger.debug("ssl engine finished handshake")
         case SslEngine.UnwrappedData(bs) =>
             val decodedString = bs.decodeString("UTF-8")
-            logger.debug(s"client data ${decodedString}")
+            logger.debug(s"unwrapped client data ${decodedString}")
+            status match {
+                case EXPECT_NEW_STREAM =>
+                    val result = xmlTokenizer.decode(bs.toArray)
+                    result match {
+                        case Left(xmlEvents) =>
+                            processNewStream(xmlEvents)
+                            logger.debug("process new stream")
+                        case Right(exception) =>
+                            //
+                            //processXmlStreamException(exception)
+                            logger.warn("xml exception", exception)
+                    }
+                case EXPECT_LOGIN =>
+                    val result = xmlTokenizer.decode(bs.toArray)
+                    result match {
+                        case Left(xmlEvents) =>
+                            processLogin(xmlEvents)
+                            logger.debug("process login")
+                        case Right(exception) =>
+                            //
+                            //processXmlStreamException(exception)
+                            logger.warn("xml exception", exception)
+                    }
+                case EXPECT_CHALLENGE =>
+                    val result = xmlTokenizer.decode(bs.toArray)
+                    result match {
+                        case Left(xmlEvents) =>
+                            processChallenge(xmlEvents)
+                            logger.debug("process challenge")
+                        case Right(exception) =>
+                            //
+                            //processXmlStreamException(exception)
+                            logger.warn("xml exception", exception)
+                    }
+                case EXPECT_CHALLENGE_SUCCESS =>
+                    val result = xmlTokenizer.decode(bs.toArray)
+                    result match {
+                        case Left(xmlEvents) =>
+                            processChallengeSuccess(xmlEvents)
+                            logger.debug("process challenge success")
+                        case Right(exception) =>
+                            //
+                            //processXmlStreamException(exception)
+                            logger.warn("xml exception", exception)
+                    }
+                case EXPECT_BIND =>
+                    val result = xmlTokenizer.decode(bs.toArray)
+                    result match {
+                        case Left(xmlEvents) =>
+                            processBind(xmlEvents)
+                            logger.debug("process challenge success")
+                        case Right(exception) =>
+                            //
+                            //processXmlStreamException(exception)
+                            logger.warn("xml exception", exception)
+                    }
+                case EXPECT_SESSION =>
+                    val result = xmlTokenizer.decode(bs.toArray)
+                    result match {
+                        case Left(xmlEvents) =>
+                            processSession(xmlEvents)
+                            logger.debug("process challenge success")
+                        case Right(exception) =>
+                            //
+                            //processXmlStreamException(exception)
+                            logger.warn("xml exception", exception)
+                    }
+                case x : Any => logger.debug("what status ?" + x.toString())
+            }
         case x =>
-            logger.debug(logTitle + "what? " + x.toString())
+            logger.warn("what? in receive " + x.toString())
     }
 
     def expectStartStream(xmlEvents: List[XMLEvent]): Unit = {
@@ -96,7 +177,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
                 } else {
                     status = EXPECT_START_TLS
                     val stream = "<?xml version=\"1.0\"?>" +
-                        "<stream:stream from=\"bleach.com\" id=\"someid\" xmlns=\"jabber:client\" " +
+                        "<stream:stream from=\"localhost\" id=\"someid\" xmlns=\"jabber:client\" " +
                         " xmlns:stream=\"http://etherx.jabber.org/streams\" version=\"1.0\">"
                     sender() ! Write(ByteString.fromString(stream))
                     val startTls = "<stream:features> " +
@@ -136,6 +217,83 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
 
     }
 
+
+    def processNewStream(xmlEvents: List[XMLEvent]): Unit = {
+        val auth = "<?xml version='1.0' encoding='UTF-8'?>" +
+            "<stream:stream xmlns:stream=\"http://etherx.jabber.org/streams\" xmlns=\"jabber:client\" " +
+            "from=\"localhost\" id=\"someid\" xml:lang=\"en\" version=\"1.0\">" +
+            "<stream:features>" +
+                "<mechanisms xmlns=\"urn:ietf:params:xml:ns:xmpp-sasl\">" +
+                    "<mechanism>PLAIN</mechanism>" +
+                    "<mechanism>DIGEST-MD5</mechanism>" +
+                    //"<mechanism>CRAM-MD5</mechanism>" +
+                    //"<mechanism>ANONYMOUS</mechanism>" +
+                    //"<mechanism>JIVE-SHAREDSECRET</mechanism>" +
+                "</mechanisms>" +
+                "<compression xmlns=\"http://jabber.org/features/compress\">" +
+                    "<method>zlib</method>" +
+                "</compression>" +
+                //"<auth xmlns=\"http://jabber.org/features/iq-auth\"/>" +
+                //"<register xmlns=\"http://jabber.org/features/iq-register\"/>" +
+            "</stream:features>"
+
+        //tcpConnection ! Write(ByteString.fromString(auth))
+
+        sslEngine ! SslEngine.WrapRequest(ByteString.fromString(auth))
+
+        status = EXPECT_LOGIN
+    }
+
+    def processLogin(xmlEvents: List[XMLEvent]): Unit = {
+        val challenge = "<challenge xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>\n\n" +
+            "cmVhbG09InNvbWVyZWFsbSIsbm9uY2U9Ik9BNk1HOXRFUUdtMmhoIixxb3A9ImF1dGgi\n\n" +
+            "   LGNoYXJzZXQ9dXRmLTgsYWxnb3JpdGhtPW1kNS1zZXNzCg==\n\n   </challenge>"
+
+        sslEngine ! SslEngine.WrapRequest(ByteString.fromString(challenge))
+
+        status = EXPECT_CHALLENGE
+    }
+
+    def processChallenge(xmlEvents: List[XMLEvent]): Unit = {
+        val success = "<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>"
+
+        sslEngine ! SslEngine.WrapRequest(ByteString.fromString(success))
+
+        status = EXPECT_CHALLENGE_SUCCESS
+    }
+
+    def processChallengeSuccess(xmlEvents: List[XMLEvent]): Unit = {
+        val bind = "<stream:stream xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' id='someid' " +
+            "from='example.com' version='1.0'>\n <stream:features>\n <bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'/>\n +" +
+            "    <session xmlns='urn:ietf:params:xml:ns:xmpp-session'/>\n</stream:features>"
+
+        sslEngine ! SslEngine.WrapRequest(ByteString.fromString(bind))
+
+        status = EXPECT_BIND
+    }
+
+    def processBind(xmlEvents: List[XMLEvent]): Unit = {
+        val id =  getIdAttribute(xmlEvents.head.asStartElement())
+
+        val jid = s"<iq type='result' id='${id}'> <bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'> " +
+            "<jid>someid@localhost/Smack</jid> </bind> </iq>  "
+
+        sslEngine ! SslEngine.WrapRequest(ByteString.fromString(jid))
+
+        status = EXPECT_SESSION
+    }
+
+    def processSession(xmlEvents: List[XMLEvent]): Unit = {
+        val id =  getIdAttribute(xmlEvents.head.asStartElement())
+
+        val session = s"<iq from='localhost' type='result' id='${id}'/>"
+
+        sslEngine ! SslEngine.WrapRequest(ByteString.fromString(session))
+
+        status = EXPECT_SESSION
+    }
+
+
     def processXmlStreamException(e: Exception): Unit = {
         //
         logger.error("tcp connection handler received wrong xml data: " + e.getMessage(), e)
@@ -148,5 +306,19 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
         if (sslEngine != null) {
             context.stop(sslEngine)
         }
+    }
+
+    def getIdAttribute(startElement: StartElement): String = {
+        var id = ""
+        val attributes = startElement.getAttributes()
+        while(attributes.hasNext()) {
+            val attribute = attributes.next()
+            val e = attribute.asInstanceOf[javax.xml.stream.events.Attribute]
+            if ("id".equalsIgnoreCase(e.getName().getLocalPart())) {
+                id = e.getValue()
+            }
+            logger.debug(s"attribute ${attribute} ${e.getName()} ${e.getValue()}")
+        }
+        id
     }
 }
