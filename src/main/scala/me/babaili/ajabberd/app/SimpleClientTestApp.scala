@@ -23,7 +23,7 @@ object SimpleClientTestApp extends App {
 
     System.setProperty("javax.net.debug", "all")
 
-    /*
+
     val startStreamXml = "<?xml version=\"1.0\"?> \n" +
         "<stream:stream to=\"onepiece.com\" xmlns=\"jabber:client\" \n " +
         "xmlns:stream=\"http://etherx.jabber.org/streams\" version=\"1.0\">"
@@ -69,7 +69,7 @@ object SimpleClientTestApp extends App {
             e.printStackTrace()
             assert(false)
     }
-    */
+
 
     //tls hand shake
     val password = "123456".toCharArray
@@ -90,17 +90,17 @@ object SimpleClientTestApp extends App {
     //System.out.println("enabled protocols" + sslContext.getProtocol())
     sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), null)
 
-    val sslSocket:SSLSocket = (sslContext.getSocketFactory().createSocket( "localhost", 6666)).asInstanceOf[SSLSocket]
+    val sslSocket:SSLSocket = (sslContext.getSocketFactory().createSocket(socket, "localhost", 6666, true)).asInstanceOf[SSLSocket]
     //
     sslSocket.setUseClientMode(true)
     sslSocket.startHandshake()
 
 
 
-    //sslSocket.getOutputStream().write("what are doing now?".getBytes())
-    //sslSocket.getOutputStream().flush()
+    sslSocket.getOutputStream().write("what are doing now?".getBytes())
+    sslSocket.getOutputStream().flush()
 
-    Thread.sleep(60 * 1000)
+    Thread.sleep(5 * 1000)
     sslSocket.close()
     System.out.println("ssl socket close")
 

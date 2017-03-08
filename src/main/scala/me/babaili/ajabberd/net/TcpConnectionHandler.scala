@@ -24,7 +24,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
     import Tcp._
     import TcpConnectionHandler._
 
-    var status = EXPECT_PROCESS_TLS
+    var status = EXPECT_START_STREAM
 
     val logTitle = "tcp connection handler " + name + " "
 
@@ -32,15 +32,14 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
 
     var tcpConnection: ActorRef = null
     var sslEngine: ActorRef = null
-    sslEngine = context.actorOf(Props(classOf[SslEngine]))
 
     def receive = {
         case d @ Received(data) =>
             //
+            tcpConnection = sender()
             logger.debug(s"status ${status}")
             status match {
                 case EXPECT_PROCESS_TLS =>
-                    tcpConnection = sender()
                     sslEngine ! d
                     logger.debug(s"forward receive data to ssl engine")
                 case _ =>
@@ -68,6 +67,9 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
             processClose()
         case SslEngine.WrappedData(bs) =>
             tcpConnection ! Write(bs)
+        case SslEngine.UnwrappedData(bs) =>
+            val decodedString = bs.decodeString("UTF-8")
+            logger.debug(s"client data ${decodedString}")
         case x =>
             logger.debug(logTitle + "what? " + x.toString())
     }
@@ -143,5 +145,8 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
     def processClose(): Unit = {
         tcpListener ! TcpListener.CloseTcpConnectionHandler(name)
         context.stop(self)
+        if (sslEngine != null) {
+            context.stop(sslEngine)
+        }
     }
 }

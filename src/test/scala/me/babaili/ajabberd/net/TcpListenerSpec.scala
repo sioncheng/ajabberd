@@ -107,38 +107,38 @@ class TcpListenerSpec extends TestKit(ActorSystem("TcpListenerSpec"))
             }
 
             //tls hand shake
-            System.setProperty("javax.net.debug","ssl")
-            val clientKeyPassword = "123456".toCharArray()
-            val clientKeyStore = KeyStore.getInstance("jks")
-            clientKeyStore.load(getClass().getResourceAsStream("/client.keystore"), clientKeyPassword)
+            val password = "123456".toCharArray
+            val keyStore = KeyStore.getInstance("JKS")
+            val inServer = getClass().getResourceAsStream("/netty/client/cChat.jks")
+            keyStore.load(inServer, password)
 
-            val trustKeyStore = KeyStore.getInstance("jks")
-            trustKeyStore.load(getClass().getResourceAsStream("/ca-trust.keystore"), clientKeyPassword)
+            val trustKeyStore = KeyStore.getInstance("JKS")
+            val inCaTrust = getClass().getResourceAsStream("/netty/client/cChat.jks")
+            trustKeyStore.load(inCaTrust, password)
 
-            val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-            keyManagerFactory.init(clientKeyStore, clientKeyPassword)
-
-            val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+            val keyManagerFactory = KeyManagerFactory.getInstance("SunX509")
+            keyManagerFactory.init(keyStore, password)
+            val trustManagerFactory = TrustManagerFactory.getInstance("SunX509")
             trustManagerFactory.init(trustKeyStore)
 
-            val sslContext = SSLContext.getInstance("TLSv1")
+            val sslContext = SSLContext.getInstance("TLSv1.2")
             //System.out.println("enabled protocols" + sslContext.getProtocol())
             sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), null)
-            val sslSocket = sslContext.getSocketFactory().createSocket(socket, "localhost", 6000, true)
+            val sslSocket = (sslContext.getSocketFactory().createSocket(socket, "localhost", 6000, true)).asInstanceOf[SSLSocket]
             //
+            sslSocket.setUseClientMode(true)
+            sslSocket.startHandshake()
 
             sslSocket.getOutputStream().write("what are doing now?".getBytes())
             sslSocket.getOutputStream().flush()
 
-            Thread.sleep(1000)
+            sslSocket.getOutputStream().write("what are doing now? 2".getBytes())
+            sslSocket.getOutputStream().write("what are doing now? 3".getBytes())
+            sslSocket.getOutputStream.flush()
+
+            Thread.sleep(5000)
             sslSocket.close()
             System.out.println("ssl socket close")
-
-            socket.shutdownInput()
-            socket.shutdownOutput()
-            socket.close()
-
-            System.out.println("ssl socket")
 
             Thread.sleep(1000)
             tcpListener ! TcpListener.QueryConnections

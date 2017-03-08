@@ -19,6 +19,7 @@ import com.typesafe.scalalogging.Logger
 
 object SslEngine {
     case class WrappedData(bs: ByteString)
+    case class UnwrappedData(bs: ByteString)
     case class Proceed()
     val logger = Logger("me.babaili.ajabberd.net.SslEngine")
 }
@@ -84,8 +85,6 @@ class SslEngine extends Actor {
     sslEngine.getEnabledProtocols().foreach(println _)
 
     sslEngine.setUseClientMode(false)
-    //sslEngine.setWantClientAuth(true)
-    //sslEngine.setEnabledCipherSuites(sslEngine.getSupportedCipherSuites())
     sslEngine.beginHandshake()
 
     val sslSession = sslEngine.getSession()
@@ -104,54 +103,61 @@ class SslEngine extends Actor {
 
 
     var tcpConnectionHandler: ActorRef = null
+    var finishedHandshake: Boolean = false
 
     def receive = {
         case Received(data) =>
             logger.debug(s"received ${data.length} \r\n ${data.utf8String}")
             logger.debug(s"peer net data ${peerNetData.position()} ${peerNetData.limit()} ${peerNetData.capacity()}")
-            //peerNetData.compact()
-            //data.foreach(b => peerNetData.put(b))
             tcpConnectionHandler = sender()
             val dest = new Array[Byte](data.length)
             data.copyToArray(dest)
             peerNetData.put(dest)
-            if (handshakeStatus == null || handshakeStatus != HandshakeStatus.FINISHED) {
+            if (!finishedHandshake) {
                 doHandshake()
             } else {
-                //assumeHasPeerNetData = true
                 unwrap()
             }
     }
 
     def unwrap() = {
+        logger.debug("unwrap")
         var shouldLoop = true
-        while (peerNetData.hasRemaining() && shouldLoop) {
-            peerAppData.clear();
+        peerNetData.flip()
+        shouldLoop = peerNetData.limit() > 0
+        while (shouldLoop) {
             val result = sslEngine.unwrap(peerNetData, peerAppData)
             logger.debug(s"bytes produced:${result.bytesProduced()} bytes consumed:${result.bytesConsumed()}")
             result.getStatus() match {
                 case Status.OK =>
                     peerAppData.flip()
-                    logger.debug("Incoming message: " + new String(peerAppData.array()))
-                    shouldLoop = false
+                    if(peerAppData.limit() > 0) {
+                        val myData = new Array[Byte](peerAppData.limit())
+                        peerAppData.get(myData)
+                        peerAppData.compact()
+                        tcpConnectionHandler ! UnwrappedData(ByteString.fromArray(myData))
+                    }
+                    shouldLoop = result.bytesProduced() > 0 && peerNetData.hasRemaining()
                 case Status.BUFFER_OVERFLOW =>
                     peerAppData = enlargeApplicationBuffer(sslEngine, peerAppData)
-                    shouldLoop = false
+                    shouldLoop = true
                 case Status.BUFFER_UNDERFLOW =>
                     peerNetData = handleBufferUnderflow(sslEngine, peerNetData)
-                    shouldLoop = false
+                    shouldLoop = true
                 case Status.CLOSED =>
                     logger.debug("Client wants to close connection...")
-                    //closeConnection(socketChannel, engine);
                     logger.debug("Goodbye client!")
+                    shouldLoop = false
             }
+            //handshakeStatus = sslEngine.getHandshakeStatus()
+            //shouldLoop = shouldLoop && handshakeStatus ==  HandshakeStatus.NEED_UNWRAP
+            logger.debug(s"hand shake status ${sslEngine.getHandshakeStatus()}")
         }
-
+        peerNetData.compact()
     }
 
     def doHandshake() = {
         logger.debug("about to do handshake")
-
 
         var result: SSLEngineResult = null
 
@@ -268,11 +274,14 @@ class SslEngine extends Actor {
                     logger.debug(s"after run task ${handshakeStatus}")
                 case HandshakeStatus.FINISHED =>
                     //
+                    finishedHandshake = true
                     logger.debug("finished")
                 case HandshakeStatus.NOT_HANDSHAKING =>
                     //
                     logger.debug("not handshaking")
             }
+
+            finishedHandshake = handshakeStatus == HandshakeStatus.FINISHED
 
             shouldLoop = shouldLoop && handshakeStatus != HandshakeStatus.FINISHED
             shouldLoop = shouldLoop && handshakeStatus != HandshakeStatus.NOT_HANDSHAKING
