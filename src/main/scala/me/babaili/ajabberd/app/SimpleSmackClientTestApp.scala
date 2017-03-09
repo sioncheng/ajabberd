@@ -3,8 +3,10 @@ package me.babaili.ajabberd.app
 import javax.net.ssl.{HostnameVerifier, SSLSession}
 import javax.security.auth.callback.CallbackHandler
 
-import org.jivesoftware.smack.SASLAuthentication
+import org.jivesoftware.smack.filter.StanzaFilter
+import org.jivesoftware.smack.{SASLAuthentication, StanzaListener}
 import org.jivesoftware.smack.java7.Java7SmackInitializer
+import org.jivesoftware.smack.packet.{Message, Stanza}
 import org.jivesoftware.smack.sasl.SASLMechanism
 import org.jivesoftware.smack.tcp.{XMPPTCPConnection, XMPPTCPConnectionConfiguration}
 import org.slf4j.LoggerFactory
@@ -17,7 +19,8 @@ object SimpleSmackClientTestApp extends App {
     val logger = LoggerFactory.getLogger("SimpleSmackClientTestApp")
 
 
-    SASLAuthentication.registerSASLMechanism(new SASLMechanism {override def checkIfSuccessfulOrThrow() = {
+    SASLAuthentication.registerSASLMechanism(new SASLMechanism {
+        override def checkIfSuccessfulOrThrow() = {
             logger.debug("checkIfSuccessfulOrThrow")
         }
 
@@ -42,6 +45,8 @@ object SimpleSmackClientTestApp extends App {
     val connectionConfiguration = XMPPTCPConnectionConfiguration
         .builder()
         .setServiceName("localhost")
+        .setHost("localhost")
+        .setPort(5222)
         .setDebuggerEnabled(true)
         .setHostnameVerifier(new HostnameVerifier {
             override def verify(s: String, sslSession: SSLSession) = {
@@ -61,12 +66,34 @@ object SimpleSmackClientTestApp extends App {
 
     logger.debug("connected to server")
 
-    conn.login("aa","bbb")
+    conn.login("aa", "bbb")
 
     logger.debug("logon to server")
 
+    val hello = new Message()
+    hello.setFrom("aa")
+    hello.setTo("bb")
+    hello.setType(Message.Type.chat)
+    hello.setBody("hello")
+    hello.setThread("hello-1")
 
-    Thread.sleep(5 * 1000)
+    conn.sendStanzaWithResponseCallback(hello, new StanzaFilter {
+        override def accept(stanza: Stanza) = {
+            logger.debug(s"accept package ${stanza.getStanzaId()}")
+            true
+        }
+    }, new StanzaListener {
+        override def processPacket(packet: Stanza) = {
+            logger.debug(s"process package ${packet.getStanzaId()}")
+        }
+    })
+
+
+    Thread.sleep(4 * 1000)
+
+    conn.disconnect()
+
+    Thread.sleep(2 * 1000)
 
 
 }

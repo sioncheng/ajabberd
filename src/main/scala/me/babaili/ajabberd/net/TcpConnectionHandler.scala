@@ -2,6 +2,8 @@ package me.babaili.ajabberd.net
 
 import javax.xml.stream.events.{StartElement, XMLEvent}
 
+import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
 import akka.actor.{Actor, ActorRef, Props}
 import akka.io.Tcp
 import akka.util.ByteString
@@ -22,8 +24,11 @@ object TcpConnectionHandler {
     val EXPECT_CHALLENGE_SUCCESS = 6
     val EXPECT_BIND = 7
     val EXPECT_SESSION = 8
+    val CLOSED = 100
 
     val logger = Logger("me.babaili.ajabberd.net.TcpConnectionHandler")
+
+    case class CloseAnyway()
 }
 
 class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
@@ -63,16 +68,25 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
                             //
                             processXmlStreamException(exception)
                     }
+                case CLOSED =>
+                    val decodedData = data.decodeString("UTF-8")
+                    logger.warn(s"closed but received data ${decodedData}")
                 case x : Any => logger.warn("what? in received" + x.toString())
             }
 
         case PeerClosed =>
             //
-            logger.debug(logTitle + "peer closed")
-            processClose()
+            logger.debug("peer closed")
+            tcpConnection ! akka.io.Tcp.Close
+            import context.dispatcher
+            context.system.scheduler.scheduleOnce(1 seconds, self, CloseAnyway())
+            //processClose()
         case Closed =>
-            logger.debug(logTitle + "closed")
-            processClose()
+            logger.debug("closed")
+            processClosed()
+        case CloseAnyway() =>
+            logger.debug("close anyway")
+            processClosed()
         case SslEngine.WrappedData(bs) =>
             tcpConnection ! Write(bs)
             logger.debug("process tls wrap")
@@ -284,13 +298,15 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
     }
 
     def processSession(xmlEvents: List[XMLEvent]): Unit = {
-        val id =  getIdAttribute(xmlEvents.head.asStartElement())
+        if(xmlEvents.head.isStartElement()) {
+            val id = getIdAttribute(xmlEvents.head.asStartElement())
 
-        val session = s"<iq from='localhost' type='result' id='${id}'/>"
+            val session = s"<iq from='localhost' type='result' id='${id}'/>"
 
-        sslEngine ! SslEngine.WrapRequest(ByteString.fromString(session))
+            sslEngine ! SslEngine.WrapRequest(ByteString.fromString(session))
 
-        status = EXPECT_SESSION
+            status = EXPECT_SESSION
+        }
     }
 
 
@@ -300,7 +316,8 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
         sender() ! Close //will receive a closed message
     }
 
-    def processClose(): Unit = {
+    def processClosed(): Unit = {
+        status = CLOSED
         tcpListener ! TcpListener.CloseTcpConnectionHandler(name)
         context.stop(self)
         if (sslEngine != null) {

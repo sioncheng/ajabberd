@@ -22,6 +22,7 @@ object SslEngine {
     case class UnwrappedData(bs: ByteString)
     case class FinishedHandshake()
     case class Proceed()
+    case class Close()
     case class WrapRequest(bs: ByteString)
     val logger = Logger("me.babaili.ajabberd.net.SslEngine")
 }
@@ -127,6 +128,8 @@ class SslEngine extends Actor {
             data.copyToArray(dest)
             myAppData.put(dest)
             wrap()
+        case Close() =>
+            close()
     }
 
     def unwrap() = {
@@ -157,6 +160,7 @@ class SslEngine extends Actor {
                     logger.debug("Client wants to close connection...")
                     logger.debug("Goodbye client!")
                     shouldLoop = false
+                    self ! Close()
             }
             //handshakeStatus = sslEngine.getHandshakeStatus()
             //shouldLoop = shouldLoop && handshakeStatus ==  HandshakeStatus.NEED_UNWRAP
@@ -207,6 +211,11 @@ class SslEngine extends Actor {
 
             }
         }
+    }
+
+    def close() = {
+        logger.debug("process close")
+        doHandshake()
     }
 
     def doHandshake() = {

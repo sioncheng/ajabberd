@@ -1,0 +1,5 @@
+{
+  "service":"localhost",
+  "tcpHost":"0.0.0.0",
+  "tcpPort":5222
+}
