@@ -9,6 +9,7 @@ import akka.io.Tcp
 import akka.util.ByteString
 import me.babaili.ajabberd.xml.XmlTokenizer
 import com.typesafe.scalalogging.Logger
+import sun.misc.{BASE64Decoder, BASE64Encoder}
 
 /**
   * Created by chengyongqiao on 03/02/2017.
@@ -43,6 +44,8 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
 
     var tcpConnection: ActorRef = null
     var sslEngine: ActorRef = null
+
+    val mySaslServer = new MySaslServer()
 
     def receive = {
         case d @ Received(data) =>
@@ -259,9 +262,12 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
     }
 
     def processLogin(xmlEvents: List[XMLEvent]): Unit = {
-        val challenge = "<challenge xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>\n\n" +
-            "cmVhbG09InNvbWVyZWFsbSIsbm9uY2U9Ik9BNk1HOXRFUUdtMmhoIixxb3A9ImF1dGgi\n\n" +
-            "   LGNoYXJzZXQ9dXRmLTgsYWxnb3JpdGhtPW1kNS1zZXNzCg==\n\n   </challenge>"
+
+        val (_, response) = mySaslServer.evaluateResponse(null)
+        val challengeBase64 = (new BASE64Encoder()).encode(response)
+        logger.debug(s"challengeBase64 ${challengeBase64}")
+
+        val challenge = s"<challenge xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>${challengeBase64}</challenge>"
 
         sslEngine ! SslEngine.WrapRequest(ByteString.fromString(challenge))
 
