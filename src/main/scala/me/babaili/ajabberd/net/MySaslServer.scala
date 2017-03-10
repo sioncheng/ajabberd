@@ -2,7 +2,7 @@ package me.babaili.ajabberd.net
 
 import java.util
 import javax.security.auth.callback._
-import javax.security.sasl.{RealmCallback, Sasl}
+import javax.security.sasl.{AuthorizeCallback, RealmCallback, Sasl}
 
 import com.typesafe.scalalogging.Logger
 
@@ -34,21 +34,38 @@ class MySaslServer {
 
     class ServerCallbackHandler(val realm: String) extends CallbackHandler {
 
+        var defaultUsername = ""
+
         override def handle(callbacks: Array[Callback]) = {
             var i = 0;
             while ( i < callbacks.length) {
                 val callback = callbacks(i)
+                logger.debug(s"callback class ${callback.getClass().getName()}")
+
                 if (callback.isInstanceOf[NameCallback]) {
 
                     val ncb = callback.asInstanceOf[NameCallback]
 
-                    ncb.setName("tony")
+                    //ncb.setName("tony")
+
+                    logger.debug(s"name callback ${ncb.getName()} ${ncb.getDefaultName()}")
+
+                   defaultUsername = ncb.getDefaultName()
+
+                    ncb.setName(defaultUsername)
 
                 } else if (callback.isInstanceOf[PasswordCallback]) {
 
                     val pcb =callback.asInstanceOf[PasswordCallback]
 
-                    pcb.setPassword("admin1".toCharArray())
+                    //pcb.setPassword("admin1".toCharArray())
+
+
+                    if("aa".equalsIgnoreCase(defaultUsername)) {
+                        pcb.setPassword("bbb".toCharArray())
+                    }
+
+                    logger.debug(s"password callback ${pcb.getPassword()} ${pcb.isEchoOn()}")
 
                 } else if (callback.isInstanceOf[RealmCallback]) {
 
@@ -56,7 +73,13 @@ class MySaslServer {
 
                     rcb.setText(realm)
 
+                    logger.debug("realm callback")
+                } else if(callback.isInstanceOf[AuthorizeCallback]) {
+                    val ac = callback.asInstanceOf[AuthorizeCallback]
+                    ac.setAuthorized(true)
                 } else {
+
+                    logger.debug(s"unsupported callback ${callback.getClass()}")
 
                     throw new UnsupportedCallbackException(callback)
 

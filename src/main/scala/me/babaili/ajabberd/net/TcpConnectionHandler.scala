@@ -236,6 +236,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
 
 
     def processNewStream(xmlEvents: List[XMLEvent]): Unit = {
+
         val auth = "<?xml version='1.0' encoding='UTF-8'?>" +
             "<stream:stream xmlns:stream=\"http://etherx.jabber.org/streams\" xmlns=\"jabber:client\" " +
             "from=\"localhost\" id=\"someid\" xml:lang=\"en\" version=\"1.0\">" +
@@ -259,6 +260,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
         sslEngine ! SslEngine.WrapRequest(ByteString.fromString(auth))
 
         status = EXPECT_LOGIN
+
     }
 
     def processLogin(xmlEvents: List[XMLEvent]): Unit = {
@@ -275,16 +277,42 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
     }
 
     def processChallenge(xmlEvents: List[XMLEvent]): Unit = {
-        val success = "<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>"
 
-        sslEngine ! SslEngine.WrapRequest(ByteString.fromString(success))
+        xmlEvents.head.isStartElement() match {
+            case true =>
+                xmlEvents.tail.head.isCharacters() match {
+                    case true =>
+                        val responseText = xmlEvents.tail.head.asCharacters().getData()
+                        logger.debug(s"responseText ${responseText}")
+                        val decodedResponseBytes = (new BASE64Decoder()).decodeBuffer(responseText)
+                        val decodedResponseText = new String(decodedResponseBytes)
+                        logger.debug(s"decoded responseText ${decodedResponseText}")
+                        val (ok, response) = mySaslServer.evaluateResponse(decodedResponseBytes)
+                        ok match {
+                            case true =>
+                                val success = "<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>"
+                                sslEngine ! SslEngine.WrapRequest(ByteString.fromString(success))
+                                status = EXPECT_CHALLENGE_SUCCESS
+                            case false =>
+                                val challengeBase64 = (new BASE64Encoder()).encode(response)
+                                logger.debug(s"challengeBase64 ${challengeBase64}")
 
-        status = EXPECT_CHALLENGE_SUCCESS
+                                val challenge = s"<challenge xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>${challengeBase64}</challenge>"
+                                sslEngine ! SslEngine.WrapRequest(ByteString.fromString(challenge))
+
+                                status = EXPECT_CHALLENGE
+                        }
+                    case false =>
+                        logger.warn("not characters")
+                }
+            case false =>
+                logger.warn("not start element")
+        }
     }
 
     def processChallengeSuccess(xmlEvents: List[XMLEvent]): Unit = {
         val bind = "<stream:stream xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' id='someid' " +
-            "from='example.com' version='1.0'>\n <stream:features>\n <bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'/>\n +" +
+            "from='localhost' version='1.0'>\n <stream:features>\n <bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'/>\n +" +
             "    <session xmlns='urn:ietf:params:xml:ns:xmpp-session'/>\n</stream:features>"
 
         sslEngine ! SslEngine.WrapRequest(ByteString.fromString(bind))
