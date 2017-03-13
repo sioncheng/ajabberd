@@ -55,7 +55,7 @@ object SimpleSmackClientTestApp extends App {
         .setHost("localhost")
         .setPort(5222)
         .setDebuggerEnabled(true)
-        .setUsernameAndPassword("aa", "aaaa")
+        .setUsernameAndPassword("aa", "bbb")
         .setResource("SimpleSmackClientTestApp")
         .setHostnameVerifier(new HostnameVerifier {
             override def verify(s: String, sslSession: SSLSession) = {
