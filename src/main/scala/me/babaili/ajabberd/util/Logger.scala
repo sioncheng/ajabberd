@@ -7,7 +7,7 @@ package util
 
 import org.slf4j.{LoggerFactory, Marker, Logger => SLF4JLogger}
 
-private [ajabberd] class Logger
+private [ajabberd] trait Logger
 {
     private lazy val logger:SLF4JLogger = LoggerFactory.getLogger(loggerNameFor(this.getClass))
 

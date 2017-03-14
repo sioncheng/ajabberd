@@ -1,6 +1,7 @@
 package me.babaili.ajabberd.xml
 
-import javax.xml.stream.events.XMLEvent
+import javax.xml.namespace.QName
+import javax.xml.stream.events.{Attribute, XMLEvent, Namespace}
 import javax.xml.stream.XMLStreamConstants
 
 import org.scalatest.{FunSpecLike, Matchers}
@@ -86,26 +87,120 @@ class XmlTokenizerSpec extends FunSpecLike with Matchers {
 
         it("should be able to parse " + startStream + " " + startTls) {
 
+            def nameToXml(name:QName) = {
+                val prefix = name.getPrefix()
+                prefix.isEmpty() match {
+                    case true =>
+                        name.getLocalPart()
+                    case false =>
+                        s"${name.getPrefix()}:${name.getLocalPart()}"
+                }
+            }
+
+            def attributesToXml(attributes: java.util.Iterator[_]) = {
+                val sb = new StringBuilder()
+                if(attributes.hasNext()) {
+                    val next = attributes.next().asInstanceOf[Attribute]
+                    sb.append(" ")
+                    sb.append(nameToXml(next.getName()))
+                    sb.append("=")
+                    sb.append("\"")
+                    sb.append(next.getValue())
+                    sb.append("\"")
+                }
+                sb.toString()
+            }
+
+            def namespacesToXml(attributes: java.util.Iterator[_]) = {
+                val sb = new StringBuilder()
+                if(attributes.hasNext()) {
+                    val next = attributes.next().asInstanceOf[Namespace]
+                    sb.append(" ")
+                    sb.append(nameToXml(next.getName()))
+                    sb.append("=")
+                    sb.append("\"")
+                    sb.append(next.getValue())
+                    sb.append("\"")
+                }
+                sb.toString()
+            }
+
+
+            def xmlEventToXml(event:XMLEvent) = {
+                event.getEventType() match {
+                    case XMLStreamConstants.START_ELEMENT =>
+                        val se = event.asStartElement()
+                        val sb = new StringBuilder()
+                        sb.append("<")
+                        sb.append(nameToXml(se.getName()))
+                        sb.append(attributesToXml(se.getAttributes()))
+                        sb.append(namespacesToXml(se.getNamespaces()))
+                        val prefix = se.getName().getPrefix()
+                        if (prefix != null && !prefix.isEmpty()) {
+                            val namespaceURI = se.getNamespaceURI(prefix)
+                            if(namespaceURI != null && !namespaceURI.isEmpty()) {
+                                sb.append(" ")
+                                sb.append("xmlns:")
+                                sb.append(prefix)
+                                sb.append("=")
+                                sb.append("\"")
+                                sb.append(namespaceURI)
+                                sb.append("\"")
+                            }
+                        }
+                        sb.append(">")
+                        sb.toString()
+                    case XMLStreamConstants.END_ELEMENT =>
+                        val ee = event.asEndElement()
+                        val sb = new StringBuilder()
+                        sb.append("</")
+                        sb.append(nameToXml(ee.getName()))
+                        sb.append(">")
+                        sb.toString()
+
+                }
+            }
+
+
+            def combile(prefix:String, localPart:String, namespaceURI: String, end: Boolean) = {
+                val endChar = if(end) "/" else ""
+                prefix.isEmpty() match {
+                    case true =>
+                        s"<${endChar}${localPart}'>"
+                    case false =>
+                        s"<${endChar}${prefix}:${localPart}'>"
+                }
+            }
+
             def outputXmlEvents(xmlEvents: List[XMLEvent]): Unit = {
                 xmlEvents match {
                     case head :: tail =>
                         //
                         head.getEventType() match {
-                            case XMLStreamConstants.ATTRIBUTE => println("attribute")
+                            case XMLStreamConstants.ATTRIBUTE =>
+                                println(s"attribute ${head.getSchemaType().getLocalPart()}")
                             case XMLStreamConstants.CDATA => println("cdata")
-                            case XMLStreamConstants.CHARACTERS => println("characters")
+                            case XMLStreamConstants.CHARACTERS =>
+                                println("characters")
+                                val se = head.asCharacters()
+                                println(s"${se.getData()}")
                             case XMLStreamConstants.COMMENT => println("comment")
                             case XMLStreamConstants.DTD => println("dtd")
                             case XMLStreamConstants.END_DOCUMENT => println("end document")
-                            case XMLStreamConstants.END_ELEMENT => println("end element")
+                            case XMLStreamConstants.END_ELEMENT =>
+                                println("end element")
+                                println(xmlEventToXml(head))
                             case XMLStreamConstants.ENTITY_DECLARATION => println("entity declaration")
                             case XMLStreamConstants.ENTITY_REFERENCE => println("entity reference")
                             case XMLStreamConstants.NAMESPACE => println("namespace")
                             case XMLStreamConstants.NOTATION_DECLARATION => println("notation declaration")
                             case XMLStreamConstants.PROCESSING_INSTRUCTION => println("processing instruction")
                             case XMLStreamConstants.SPACE => println("space")
-                            case XMLStreamConstants.START_DOCUMENT => println("start document")
-                            case XMLStreamConstants.START_ELEMENT => println("start element")
+                            case XMLStreamConstants.START_DOCUMENT =>
+                                println("start document")
+                            case XMLStreamConstants.START_ELEMENT =>
+                                println("start element")
+                                println(xmlEventToXml(head))
                         }
 
                         outputXmlEvents(tail)

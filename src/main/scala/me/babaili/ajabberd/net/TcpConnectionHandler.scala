@@ -8,6 +8,7 @@ import akka.actor.{Actor, ActorRef, Props}
 import akka.io.Tcp
 import akka.util.ByteString
 import me.babaili.ajabberd.xml.XmlTokenizer
+import me.babaili.ajabberd.util
 import com.typesafe.scalalogging.Logger
 import sun.misc.{BASE64Decoder, BASE64Encoder}
 
@@ -16,6 +17,7 @@ import sun.misc.{BASE64Decoder, BASE64Encoder}
   */
 
 object TcpConnectionHandler {
+    val INIT = -1
     val EXPECT_START_STREAM = 0
     val EXPECT_START_TLS = 1
     val EXPECT_PROCESS_TLS = 2
@@ -32,7 +34,7 @@ object TcpConnectionHandler {
     case class CloseAnyway()
 }
 
-class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
+class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor with util.Logger {
     import Tcp._
     import TcpConnectionHandler._
 
@@ -47,7 +49,18 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
 
     val mySaslServer = new MySaslServer()
 
+    //************************
+
+
+
+    //************************
+
     def receive = {
+        case Received(data) =>
+            debug(s"received data ${data.decodeString("utf8")}")
+    }
+
+    def oldreceive: Receive = {
         case d @ Received(data) =>
             //
             tcpConnection = sender()

@@ -6,6 +6,8 @@ import scala.xml._
 
 trait Packet
 
+object NullPacket extends Packet
+
 abstract class XmlWrapper(val xml:Node)
 {
     override def toString = xml.toString()
