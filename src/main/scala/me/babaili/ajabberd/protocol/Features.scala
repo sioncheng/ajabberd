@@ -6,11 +6,12 @@ import scala.xml._
 
 object Features
 {
-    val tag = "stream:features"
+    val streamTag = "stream:features"
+    val tag = "features"
 
     def apply(features:Seq[Node]):Features =
     {
-        apply(Elem(null, tag, Null, TopScope, features:_*))
+        apply(Elem(null, streamTag, Null, TopScope, false, features:_*))
     }
 
     def apply(xml:Node):Features = new Features(xml)

@@ -1,5 +1,6 @@
 package me.babaili.ajabberd.xml
 
+import me.babaili.ajabberd.protocol.Features
 import org.scalatest.{FunSpecLike, Matchers}
 
 /**
@@ -7,20 +8,39 @@ import org.scalatest.{FunSpecLike, Matchers}
   */
 class XMPPXMLTokenizerSpec  extends FunSpecLike with Matchers {
 
-    describe("") {
-        it("") {
-            val startTls = "<features> " +
+    describe("given an XMPPXMLTokenizer") {
+        it("should be able to emit xmpp packets") {
+             val startStream = "<?xml version=\"1.0\"?> \n" +
+                "<stream:stream to=\"onepiece.com\" xmlns=\"jabber:client\" \n " +
+                "xmlns:stream=\"http://etherx.jabber.org/streams\" version=\"1.0\">"
+
+            val startTls = "<stream:features> " +
                 " <starttls xmlns=\"urn:ietf:params:xml:ns: xmpp-tls\"></starttls> " +
-                " </features>"
+                " </stream:features>"
 
             val xmlTokenizer = new XmlTokenizer()
-            val result = xmlTokenizer.decode(startTls.getBytes())
+            val result = xmlTokenizer.decode((startStream + startTls).getBytes())
             result match {
                 case Left(xmlEvents) =>
                     val (x,y) = XMPPXMLTokenizer.emit(xmlEvents)
                     println(x, y)
+                    y.isEmpty match {
+                        case false =>
+                            val (x2, y2) = XMPPXMLTokenizer.emit(y)
+                            println(x2,y2)
+                            if (x2.head.isInstanceOf[Features]) {
+                                val features = x2.head.asInstanceOf[Features]
+                                features.features.foreach(println _)
+                            } else {
+                                println(s"what? ${x2.getClass()}")
+                                assert(false)
+                            }
+                        case true =>
+                            println("end")
+                    }
                 case Right(e) =>
                     println(e)
+                    assert(false)
             }
         }
     }

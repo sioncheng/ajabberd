@@ -21,7 +21,7 @@ object Stanza
             case IQ.tag => iq.Builder(xml)
             case Presence.tag => presence.Builder(xml)
             case Message.tag => message.Builder(xml)
-            case _ => throw new Exception("unknown stanza type, expected iq, presence or message")
+            case _ => throw new Exception(s"unknown stanza type, expected iq, presence or message. xml label: ${xml.label}")
         }
     }
 

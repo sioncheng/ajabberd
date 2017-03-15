@@ -11,6 +11,9 @@ import me.babaili.ajabberd.protocol._
 import me.babaili.ajabberd.util.Logger
 
 import scala.annotation.tailrec
+import scala.collection.{mutable}
+import scala.xml.pull._
+import scala.xml._
 
 /**
   * Created by chengyongqiao on 13/01/2017.
@@ -23,9 +26,9 @@ object XMPPXMLTokenizer {
     val logger = new Logger{}
 
     @tailrec
-    def emit(xmlEvents:List[XMLEvent]): (Packet, List[XMLEvent] ) = {
+    def emit(xmlEvents:List[XMLEvent]): (List[Packet], List[XMLEvent] ) = {
         if(xmlEvents.isEmpty) {
-            (NullPacket, xmlEvents)
+            (List(NullPacket), xmlEvents)
         } else {
             val head = xmlEvents(0)
             head.isStartDocument() match {
@@ -37,11 +40,12 @@ object XMPPXMLTokenizer {
                         case true =>
                             //
                             logger.debug("start element")
-                            val xml = head.asStartElement().getName().getLocalPart()
-                            if (StreamHead.qualifies(xml)) {
-                                (StreamHead(xml), xmlEvents.tail)
-                            } else if(StreamTail.qualifies(xml)) {
-                                (StreamTail(), xmlEvents.tail)
+                            val headQName = head.asStartElement().getName()
+                            val eventXml = xmlEventToXml(head)
+                            if (StreamHead.qualifies(eventXml)) {
+                                (List(StreamHead(eventXml)), xmlEvents.tail)
+                            } else if(StreamTail.qualifies(eventXml)) {
+                                (List(StreamTail()), xmlEvents.tail)
                             } else {
                                 import scala.collection.mutable.Stack
                                 val stack = Stack[XMLEvent]()
@@ -50,29 +54,30 @@ object XMPPXMLTokenizer {
                                 stack.push(head)
                                 while(!tails.isEmpty && !paired){
                                     if(tails.head.isEndElement()) {
-                                        if(tails.head.asEndElement().getName().getLocalPart().equalsIgnoreCase(xml)) {
+                                        val endQName = tails.head.asEndElement().getName()
+                                        if(endQName.equals(headQName)) {
                                             paired = true
-                                            stack.push(tails.head)
                                         } else {
-                                            stack.push(tails.head)
-                                            tails = tails.tail
+                                            //
                                         }
                                     } else {
-                                        stack.push(tails.head)
-                                        tails = tails.tail
+                                        //
                                     }
+
+                                    stack.push(tails.head)
+                                    tails = tails.tail
                                 }
                                 if(paired) {
                                     val totalXml = xmlEventsToXml(stack.toList.reverse)
                                     logger.debug(s"paired ${totalXml}")
-                                    (NullPacket, tails.tail)
+                                    (toPacket(totalXml), tails)
                                 } else {
-                                    (NullPacket, xmlEvents)
+                                    (List(NullPacket), xmlEvents)
                                 }
                             }
                         case false =>
                             //
-                            (NullPacket, xmlEvents)
+                            (List(NullPacket), xmlEvents)
                     }
             }
 
@@ -159,6 +164,105 @@ object XMPPXMLTokenizer {
                 event.asCharacters().getData()
 
         }
+    }
+
+    def toPacket(totalXml: String) = {
+        val parsedResult = parseXml(totalXml)
+
+        parsedResult match {
+            case Some(xmls) =>
+            {
+                val ouput = xmls.map( xml =>
+                {
+                    xml.namespace match
+                    {
+                        case Tls.namespace => xml.label match
+                        {
+                            case StartTls.tag => StartTls(xml)
+                            case TlsProceed.tag => TlsProceed(xml)
+                            case TlsFailure.tag => TlsFailure(xml)
+                            case _ => throw new Exception("unknown tls packet %s".format(xml.label))
+                        }
+                        case Sasl.namespace => xml.label match
+                        {
+                            case SaslAuth.tag => SaslAuth(xml)
+                            case SaslSuccess.tag => SaslSuccess(xml)
+                            case SaslAbort.tag => SaslAbort(xml)
+                            case SaslError.tag => SaslError(xml)
+                            case _ => throw new Exception("unknown sasl packet %s".format(xml.label))
+                        }
+                        case _ => xml.label match
+                        {
+                            case Features.tag => Features(xml)
+                            case Handshake.tag => Handshake(xml)
+                            case StreamError.tag => StreamError(xml)
+                            case _ => Stanza(xml)
+                        }
+                    }
+                })
+
+                ouput.toList
+            }
+            case None =>
+            {
+                List(NullPacket)
+            }
+        }
+    }
+
+    def parseXml(input:String):Option[Seq[Node]] = {
+        var level = 0
+        val children = mutable.HashMap[Int, mutable.ListBuffer[Node]]()
+        val attributes = mutable.HashMap[Int, MetaData]()
+        val scope = mutable.HashMap[Int, NamespaceBinding]()
+        val nodes = mutable.ListBuffer[Node]()
+
+        try
+        {
+            // using a customized version of XMLEventReadr as it is buggy, see
+            // http://scala-programming-language.1934581.n4.nabble.com/OutOfMemoryError-when-using-XMLEventReader-td2341263.html
+            //  should be fixed in scala 2.9, need to test when it is released
+            val tokenizer = new XMLEventReaderEx(scala.io.Source.fromString(input))
+            tokenizer.foreach( token =>
+            {
+                token match
+                {
+                    case tag:EvText => children(level) += new Text(tag.text)
+                    case tag:EvProcInstr => children(level) += new ProcInstr(tag.target, tag.text)
+                    case tag:EvComment => children(level) += new Comment(tag.text)
+                    case tag:EvEntityRef => children(level) += new EntityRef(tag.entity)
+                    case tag:EvElemStart =>
+                    {
+                        level += 1
+                        if (!attributes.contains(level)) attributes += level -> tag.attrs else attributes(level) = tag.attrs
+                        if (!scope.contains(level)) scope += level -> tag.scope else scope(level) = tag.scope
+                        if (!children.contains(level)) children += level -> new mutable.ListBuffer[Node]() else children(level) = new mutable.ListBuffer[Node]()
+                    }
+                    case tag:EvElemEnd =>
+                    {
+                        val node = Elem(tag.pre, tag.label, attributes(level), scope(level), children(level):_*)
+
+                        level -= 1
+                        if (0 == level)
+                        {
+                            nodes += node
+                        }
+                        else
+                        {
+                            children(level) += node
+                        }
+                    }
+                }
+            })
+
+            return if (nodes.length > 0) Some(nodes) else None
+        }
+        catch
+            {
+                // TODO: would be nice to handle bad vs. partial xml, only the latter is important to us (for buffering)
+                case e: scala.xml.parsing.FatalError => None
+                case e: Throwable => throw e
+            }
     }
 }
 

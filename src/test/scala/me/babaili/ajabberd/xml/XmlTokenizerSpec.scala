@@ -88,18 +88,6 @@ class XmlTokenizerSpec extends FunSpecLike with Matchers {
         it("should be able to parse " + startStream + " " + startTls) {
 
 
-
-
-            def combile(prefix:String, localPart:String, namespaceURI: String, end: Boolean) = {
-                val endChar = if(end) "/" else ""
-                prefix.isEmpty() match {
-                    case true =>
-                        s"<${endChar}${localPart}'>"
-                    case false =>
-                        s"<${endChar}${prefix}:${localPart}'>"
-                }
-            }
-
             def outputXmlEvents(xmlEvents: List[XMLEvent]): Unit = {
                 xmlEvents match {
                     case head :: tail =>
@@ -144,6 +132,8 @@ class XmlTokenizerSpec extends FunSpecLike with Matchers {
                     println("======= exception: " + x.getMessage())
                     assert(false)
             }
+
+            
         }
 
         val parseXmppStartStream1 = "<?xml version=\"1.0\"?> \n" +

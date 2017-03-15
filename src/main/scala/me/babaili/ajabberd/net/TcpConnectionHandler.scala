@@ -7,10 +7,13 @@ import scala.concurrent.duration._
 import akka.actor.{Actor, ActorRef, Props}
 import akka.io.Tcp
 import akka.util.ByteString
-import me.babaili.ajabberd.xml.XmlTokenizer
+import me.babaili.ajabberd.xml.{XMPPXMLTokenizer, XmlTokenizer}
 import me.babaili.ajabberd.util
 import com.typesafe.scalalogging.Logger
+import me.babaili.ajabberd.protocol._
 import sun.misc.{BASE64Decoder, BASE64Encoder}
+
+import scala.collection.immutable.HashMap
 
 /**
   * Created by chengyongqiao on 03/02/2017.
@@ -38,11 +41,12 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
     import Tcp._
     import TcpConnectionHandler._
 
-    var status = EXPECT_START_STREAM
+    var status = INIT
 
     val logTitle = "tcp connection handler " + name + " "
 
     val xmlTokenizer = new XmlTokenizer()
+    var remainedXmlEvents: List[XMLEvent] = List.empty
 
     var tcpConnection: ActorRef = null
     var sslEngine: ActorRef = null
@@ -58,6 +62,70 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
     def receive = {
         case Received(data) =>
             debug(s"received data ${data.decodeString("utf8")}")
+            status match {
+                case INIT =>
+                    val result = xmlTokenizer.decode(data.toArray)
+                    result match {
+                        case Left(xmlEvents) =>
+                            val (packets, remained) = XMPPXMLTokenizer.emit(remainedXmlEvents ::: xmlEvents)
+                            remainedXmlEvents = remained
+                            processXmppPacket(packets)
+                        case Right(exception) =>
+                            //
+                            processXmlStreamException(exception)
+                    }
+                case x =>
+                    warn(s"what status ? ${x}")
+            }
+    }
+
+    def processXmppPacket(packets: List[Packet]):Unit = {
+        packets.head match {
+            case NullPacket =>
+                warn("no packet has been emit")
+            case _ =>
+                if (packets.head.isInstanceOf[StreamHead]) {
+                    val streamHead = packets.head.asInstanceOf[StreamHead]
+                    val fromClient = streamHead.attributes.get("from").getOrElse("")
+                    val responseAttributes = HashMap[String, String]("from" -> "localhost",
+                        "to" -> fromClient)
+                    val responseHead = StreamHead("jabber:client", responseAttributes)
+                    debug(s"stream head ${streamHead}")
+                    status = EXPECT_START_TLS
+                    val xmlHead = "<?xml version=\"1.0\"?>"
+                    sender() ! Write(ByteString.fromString(xmlHead))
+                    sender() ! Write(ByteString.fromString(responseHead.toString()))
+                    val startTls = "<stream:features> " +
+                        " <starttls xmlns=\"urn:ietf:params:xml:ns:xmpp-tls\"></starttls> " +
+                        " <mechanisms xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>" +
+                        "    <mechanism>DIGEST-MD5</mechanism> " +
+                        "    <mechanism>PLAIN</mechanism> " +
+                        " </mechanisms> " +
+                        " </stream:features>"
+
+                    val tls = <starttls xmlns={ Tls.namespace }>
+                        <required/>
+                    </starttls>
+
+                    val mechanism = <mechanisms xmlns={ Sasl.namespace }>
+                        <mechanism>{ SaslMechanism.Plain.toString }</mechanism>
+                        <mechanism>{SaslMechanism.DiagestMD5.toString}</mechanism>
+                    </mechanisms>
+
+                    val features = Features(List(tls, mechanism))
+
+                    sender() ! Write(ByteString.fromString(features.toString()))
+
+                    logger.debug(logTitle + "accept start stream and response features")
+                    if(packets.tail != null && !packets.tail.isEmpty) {
+                        processXmppPacket(packets.tail)
+                    }
+
+                } else {
+                    processXmlStreamException(new Exception("packet is not stream head"))
+                }
+
+        }
     }
 
     def oldreceive: Receive = {
