@@ -1,6 +1,8 @@
 package me.babaili.ajabberd.xml
 
-import javax.xml.stream.events.XMLEvent
+import javax.xml.namespace.QName
+import javax.xml.stream.XMLStreamConstants
+import javax.xml.stream.events.{Attribute, Namespace, XMLEvent}
 
 import com.fasterxml.aalto.AsyncXMLStreamReader
 import com.fasterxml.aalto.evt.EventAllocatorImpl
@@ -28,11 +30,13 @@ object XMPPXMLTokenizer {
             val head = xmlEvents(0)
             head.isStartDocument() match {
                 case true =>
+                    logger.debug("start document")
                     emit(xmlEvents.tail)
                 case false =>
                     head.isStartElement() match {
                         case true =>
                             //
+                            logger.debug("start element")
                             val xml = head.asStartElement().getName().getLocalPart()
                             if (StreamHead.qualifies(xml)) {
                                 (StreamHead(xml), xmlEvents.tail)
@@ -43,10 +47,15 @@ object XMPPXMLTokenizer {
                                 val stack = Stack[XMLEvent]()
                                 var tails = xmlEvents.tail
                                 var paired = false
+                                stack.push(head)
                                 while(!tails.isEmpty && !paired){
                                     if(tails.head.isEndElement()) {
                                         if(tails.head.asEndElement().getName().getLocalPart().equalsIgnoreCase(xml)) {
                                             paired = true
+                                            stack.push(tails.head)
+                                        } else {
+                                            stack.push(tails.head)
+                                            tails = tails.tail
                                         }
                                     } else {
                                         stack.push(tails.head)
@@ -54,7 +63,8 @@ object XMPPXMLTokenizer {
                                     }
                                 }
                                 if(paired) {
-                                    logger.debug(s"paired ${xml}")
+                                    val totalXml = xmlEventsToXml(stack.toList.reverse)
+                                    logger.debug(s"paired ${totalXml}")
                                     (NullPacket, tails.tail)
                                 } else {
                                     (NullPacket, xmlEvents)
@@ -65,6 +75,88 @@ object XMPPXMLTokenizer {
                             (NullPacket, xmlEvents)
                     }
             }
+
+        }
+    }
+
+    def xmlEventsToXml(xmlEvents: List[XMLEvent]) = {
+        val sb = new StringBuilder()
+        xmlEvents.foreach(x => sb.append(xmlEventToXml(x)))
+        sb.toString()
+    }
+
+    def nameToXml(name:QName) = {
+        val prefix = name.getPrefix()
+        prefix.isEmpty() match {
+            case true =>
+                name.getLocalPart()
+            case false =>
+                s"${name.getPrefix()}:${name.getLocalPart()}"
+        }
+    }
+
+    def attributesToXml(attributes: java.util.Iterator[_]) = {
+        val sb = new StringBuilder()
+        if(attributes.hasNext()) {
+            val next = attributes.next().asInstanceOf[Attribute]
+            sb.append(" ")
+            sb.append(nameToXml(next.getName()))
+            sb.append("=")
+            sb.append("\"")
+            sb.append(next.getValue())
+            sb.append("\"")
+        }
+        sb.toString()
+    }
+
+    def namespacesToXml(attributes: java.util.Iterator[_]) = {
+        val sb = new StringBuilder()
+        if(attributes.hasNext()) {
+            val next = attributes.next().asInstanceOf[Namespace]
+            sb.append(" ")
+            sb.append(nameToXml(next.getName()))
+            sb.append("=")
+            sb.append("\"")
+            sb.append(next.getValue())
+            sb.append("\"")
+        }
+        sb.toString()
+    }
+
+
+    def xmlEventToXml(event:XMLEvent) = {
+        event.getEventType() match {
+            case XMLStreamConstants.START_ELEMENT =>
+                val se = event.asStartElement()
+                val sb = new StringBuilder()
+                sb.append("<")
+                sb.append(nameToXml(se.getName()))
+                sb.append(attributesToXml(se.getAttributes()))
+                sb.append(namespacesToXml(se.getNamespaces()))
+                val prefix = se.getName().getPrefix()
+                if (prefix != null && !prefix.isEmpty()) {
+                    val namespaceURI = se.getNamespaceURI(prefix)
+                    if(namespaceURI != null && !namespaceURI.isEmpty()) {
+                        sb.append(" ")
+                        sb.append("xmlns:")
+                        sb.append(prefix)
+                        sb.append("=")
+                        sb.append("\"")
+                        sb.append(namespaceURI)
+                        sb.append("\"")
+                    }
+                }
+                sb.append(">")
+                sb.toString()
+            case XMLStreamConstants.END_ELEMENT =>
+                val ee = event.asEndElement()
+                val sb = new StringBuilder()
+                sb.append("</")
+                sb.append(nameToXml(ee.getName()))
+                sb.append(">")
+                sb.toString()
+            case XMLStreamConstants.CHARACTERS =>
+                event.asCharacters().getData()
 
         }
     }
