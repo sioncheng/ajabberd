@@ -4,6 +4,10 @@ package protocol
 import scala.collection._
 import scala.xml._
 
+case class XmlHead() extends Packet {
+    override def toString: String = "<?xml version=\"1.0\"?>"
+}
+
 object StreamHead
 {
     protected [protocol] val tag = "<stream:stream"

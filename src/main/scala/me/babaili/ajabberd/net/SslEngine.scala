@@ -8,7 +8,6 @@ import javax.net.ssl.SSLEngineResult.HandshakeStatus
 import javax.net.ssl.SSLEngineResult.Status
 
 import akka.actor.{Actor, ActorRef}
-import akka.io.Tcp.Received
 import akka.util.ByteString
 import com.typesafe.scalalogging.Logger
 
@@ -18,12 +17,13 @@ import com.typesafe.scalalogging.Logger
   */
 
 object SslEngine {
-    case class WrappedData(bs: ByteString)
-    case class UnwrappedData(bs: ByteString)
+    case class SslData(data: Array[Byte])
+    case class WrappedData(data: Array[Byte])
+    case class UnwrappedData(data: Array[Byte])
     case class FinishedHandshake()
     case class Proceed()
     case class Close()
-    case class WrapRequest(bs: ByteString)
+    case class WrapRequest(data: Array[Byte])
     val logger = Logger("me.babaili.ajabberd.net.SslEngine")
 }
 
@@ -111,25 +111,23 @@ class SslEngine extends Actor {
     var finishedHandshake: Boolean = false
 
     def receive = {
-        case Received(data) =>
-            logger.debug(s"received ${data.length} \r\n ${data.utf8String}")
+        case SslData(data) =>
+            logger.debug(s"received ${data.length} \r\n ${new String(data)}")
             logger.debug(s"peer net data ${peerNetData.position()} ${peerNetData.limit()} ${peerNetData.capacity()}")
             tcpConnectionHandler = sender()
-            val dest = new Array[Byte](data.length)
-            data.copyToArray(dest)
-            peerNetData.put(dest)
+            peerNetData.put(data)
             if (!finishedHandshake) {
                 doHandshake()
             } else {
                 unwrap()
             }
         case WrapRequest(data) =>
-            val dest = new Array[Byte](data.length)
-            data.copyToArray(dest)
-            myAppData.put(dest)
+            myAppData.put(data)
             wrap()
         case Close() =>
             close()
+        case x: Any =>
+            logger.warn(s"what did i get? ${x}")
     }
 
     def unwrap() = {
@@ -147,7 +145,7 @@ class SslEngine extends Actor {
                         val myData = new Array[Byte](peerAppData.limit())
                         peerAppData.get(myData)
                         peerAppData.compact()
-                        tcpConnectionHandler ! UnwrappedData(ByteString.fromArray(myData))
+                        tcpConnectionHandler ! UnwrappedData(myData)
                     }
                     shouldLoop = result.bytesProduced() > 0 && peerNetData.hasRemaining()
                 case Status.BUFFER_OVERFLOW =>
@@ -196,7 +194,7 @@ class SslEngine extends Actor {
                     } else {
                         val myData = new Array[Byte](myNetData.limit())
                         myNetData.get(myData)
-                        tcpConnectionHandler ! WrappedData(ByteString.fromArray(myData))
+                        tcpConnectionHandler ! WrappedData(myData)
                     }
                 case Status.BUFFER_OVERFLOW =>
                     //
@@ -309,7 +307,7 @@ class SslEngine extends Actor {
                                     } else {
                                         val myData = new Array[Byte](myNetData.limit())
                                         myNetData.get(myData)
-                                        tcpConnectionHandler ! WrappedData(ByteString.fromArray(myData))
+                                        tcpConnectionHandler ! WrappedData(myData)
                                     }
                                 case Status.BUFFER_OVERFLOW =>
                                     //

@@ -2,7 +2,6 @@ package me.babaili.ajabberd.net
 
 import javax.xml.stream.events.{StartElement, XMLEvent}
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import akka.actor.{Actor, ActorRef, Props}
 import akka.io.Tcp
@@ -10,6 +9,7 @@ import akka.util.ByteString
 import me.babaili.ajabberd.xml.{XMPPXMLTokenizer, XmlTokenizer}
 import me.babaili.ajabberd.util
 import com.typesafe.scalalogging.Logger
+import me.babaili.ajabberd.global.ApplicationContext
 import me.babaili.ajabberd.protocol._
 import sun.misc.{BASE64Decoder, BASE64Encoder}
 
@@ -61,6 +61,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
     def receive = {
         case Received(data) =>
+            tcpConnection = sender()
             debug(s"received data ${data.decodeString("utf8")}")
             status match {
                 case INIT =>
@@ -69,64 +70,52 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                         case Left(xmlEvents) =>
                             val (packets, remained) = XMPPXMLTokenizer.emit(remainedXmlEvents ::: xmlEvents)
                             remainedXmlEvents = remained
-                            processXmppPacket(packets)
+                            //processXmppPacket(packets)
+                            ApplicationContext.getXmppServer() ! packets
                         case Right(exception) =>
                             //
                             processXmlStreamException(exception)
                     }
+                case EXPECT_PROCESS_TLS | EXPECT_NEW_STREAM =>
+                    sslEngine ! SslEngine.SslData(data.toArray)
                 case x =>
                     warn(s"what status ? ${x}")
             }
-    }
-
-    def processXmppPacket(packets: List[Packet]):Unit = {
-        packets.head match {
-            case NullPacket =>
-                warn("no packet has been emit")
-            case _ =>
-                if (packets.head.isInstanceOf[StreamHead]) {
-                    val streamHead = packets.head.asInstanceOf[StreamHead]
-                    val fromClient = streamHead.attributes.get("from").getOrElse("")
-                    val responseAttributes = HashMap[String, String]("from" -> "localhost",
-                        "to" -> fromClient)
-                    val responseHead = StreamHead("jabber:client", responseAttributes)
-                    debug(s"stream head ${streamHead}")
-                    status = EXPECT_START_TLS
-                    val xmlHead = "<?xml version=\"1.0\"?>"
-                    sender() ! Write(ByteString.fromString(xmlHead))
-                    sender() ! Write(ByteString.fromString(responseHead.toString()))
-                    val startTls = "<stream:features> " +
-                        " <starttls xmlns=\"urn:ietf:params:xml:ns:xmpp-tls\"></starttls> " +
-                        " <mechanisms xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>" +
-                        "    <mechanism>DIGEST-MD5</mechanism> " +
-                        "    <mechanism>PLAIN</mechanism> " +
-                        " </mechanisms> " +
-                        " </stream:features>"
-
-                    val tls = <starttls xmlns={ Tls.namespace }>
-                        <required/>
-                    </starttls>
-
-                    val mechanism = <mechanisms xmlns={ Sasl.namespace }>
-                        <mechanism>{ SaslMechanism.Plain.toString }</mechanism>
-                        <mechanism>{SaslMechanism.DiagestMD5.toString}</mechanism>
-                    </mechanisms>
-
-                    val features = Features(List(tls, mechanism))
-
-                    sender() ! Write(ByteString.fromString(features.toString()))
-
-                    logger.debug(logTitle + "accept start stream and response features")
-                    if(packets.tail != null && !packets.tail.isEmpty) {
-                        processXmppPacket(packets.tail)
+        case x: me.babaili.ajabberd.protocol.Packet =>
+            status match {
+                case INIT =>
+                    tcpConnection ! Write(ByteString.fromString(x.toString()))
+                    if (x.isInstanceOf[TlsProceed]) {
+                        status = EXPECT_PROCESS_TLS
+                        sslEngine = context.actorOf(Props(classOf[SslEngine]))
                     }
-
-                } else {
-                    processXmlStreamException(new Exception("packet is not stream head"))
-                }
-
-        }
+                case EXPECT_PROCESS_TLS =>
+                    debug(s"send wrap request ${x.toString()}")
+                    sslEngine ! SslEngine.WrapRequest(x.toString().getBytes())
+                case x =>
+                    warn(s"what status ${x} for send packet")
+            }
+        case SslEngine.WrappedData(bs) =>
+            tcpConnection ! Write(ByteString.fromArray(bs))
+            debug("process tls wrap")
+        case SslEngine.FinishedHandshake() =>
+            status = EXPECT_NEW_STREAM
+            debug("ssl engine finished handshake")
+        case SslEngine.UnwrappedData(data) =>
+            debug(s"unwrapped data ${new String(data)}")
+            val result = xmlTokenizer.decode(data)
+            result match {
+                case Left(xmlEvents) =>
+                    val (packets, remained) = XMPPXMLTokenizer.emit(remainedXmlEvents ::: xmlEvents)
+                    remainedXmlEvents = remained
+                    ApplicationContext.getXmppServer() ! packets
+                case Right(exception) =>
+                    //
+                    processXmlStreamException(exception)
+            }
     }
+
+    /*
 
     def oldreceive: Receive = {
         case d @ Received(data) =>
@@ -252,6 +241,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
         case x =>
             logger.warn("what? in receive " + x.toString())
     }
+*/
 
     def expectStartStream(xmlEvents: List[XMLEvent]): Unit = {
         //
@@ -338,7 +328,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
         //tcpConnection ! Write(ByteString.fromString(auth))
 
-        sslEngine ! SslEngine.WrapRequest(ByteString.fromString(auth))
+        sslEngine ! SslEngine.WrapRequest(auth.getBytes())
 
         status = EXPECT_LOGIN
 
@@ -352,7 +342,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
         val challenge = s"<challenge xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>${challengeBase64}</challenge>"
 
-        sslEngine ! SslEngine.WrapRequest(ByteString.fromString(challenge))
+        sslEngine ! SslEngine.WrapRequest(challenge.getBytes())
 
         status = EXPECT_CHALLENGE
     }
@@ -372,14 +362,14 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                         ok match {
                             case true =>
                                 val success = "<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>"
-                                sslEngine ! SslEngine.WrapRequest(ByteString.fromString(success))
+                                sslEngine ! SslEngine.WrapRequest(success.getBytes())
                                 status = EXPECT_CHALLENGE_SUCCESS
                             case false =>
                                 val challengeBase64 = (new BASE64Encoder()).encode(response)
                                 logger.debug(s"challengeBase64 ${challengeBase64}")
 
                                 val challenge = s"<challenge xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>${challengeBase64}</challenge>"
-                                sslEngine ! SslEngine.WrapRequest(ByteString.fromString(challenge))
+                                sslEngine ! SslEngine.WrapRequest(challenge.getBytes())
 
                                 status = EXPECT_CHALLENGE
                         }
@@ -396,7 +386,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
             "from='localhost' version='1.0'>\n <stream:features>\n <bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'/>\n +" +
             "    <session xmlns='urn:ietf:params:xml:ns:xmpp-session'/>\n</stream:features>"
 
-        sslEngine ! SslEngine.WrapRequest(ByteString.fromString(bind))
+        sslEngine ! SslEngine.WrapRequest(bind.getBytes())
 
         status = EXPECT_BIND
     }
@@ -407,7 +397,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
         val jid = s"<iq type='result' id='${id}'> <bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'> " +
             "<jid>someid@localhost/Smack</jid> </bind> </iq>  "
 
-        sslEngine ! SslEngine.WrapRequest(ByteString.fromString(jid))
+        sslEngine ! SslEngine.WrapRequest(jid.getBytes())
 
         status = EXPECT_SESSION
     }
@@ -418,7 +408,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
             val session = s"<iq from='localhost' type='result' id='${id}'/>"
 
-            sslEngine ! SslEngine.WrapRequest(ByteString.fromString(session))
+            sslEngine ! SslEngine.WrapRequest(session.getBytes())
 
             status = EXPECT_SESSION
         }

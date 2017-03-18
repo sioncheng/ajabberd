@@ -1,6 +1,7 @@
 package me.babaili.ajabberd.app
 
 import akka.actor.{ActorSystem, Props}
+import me.babaili.ajabberd.global.ApplicationContext
 import me.babaili.ajabberd.net.TcpListener
 
 
@@ -15,6 +16,9 @@ object SimpleServerTestApp extends App {
     System.setProperty("javax.net.ssl.trustStore", "trustStore")
 
     val actorSystem = ActorSystem.create("simple-server-test")
+
+    ApplicationContext.start(actorSystem)
+
     val listener = actorSystem.actorOf(Props(classOf[TcpListener], "localhost", 5222))
 
 
