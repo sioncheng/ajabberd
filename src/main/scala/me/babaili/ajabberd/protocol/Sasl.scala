@@ -104,4 +104,28 @@ object SaslErrorCondition extends Enumeration
 
 
 
+object SaslChallenge {
+    val tag = "challenge"
+
+    def apply(response: String): SaslChallenge = apply(<challenge xmlns={Sasl.namespace}>{response}</challenge>)
+    def apply(xml: Node): SaslChallenge = new SaslChallenge(xml)
+}
+
+class SaslChallenge (xml:Node) extends XmlWrapper(xml) with Packet{
+
+}
+
+object SaslResponse  {
+    val tag = "response"
+
+    def apply(response: String): SaslResponse = apply(<response xmlns={Sasl.namespace}>{response}</response>)
+    def apply(xml: Node): SaslResponse = new SaslResponse(xml)
+}
+
+class SaslResponse(xml: Node) extends XmlWrapper(xml) with Packet {
+
+    val responseText = xml.text
+}
+
+
 

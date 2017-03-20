@@ -1,4 +1,4 @@
-package me.babaili.ajabberd.net
+package me.babaili.ajabberd.auth
 
 import java.util
 import javax.security.auth.callback._
@@ -11,7 +11,7 @@ import com.typesafe.scalalogging.Logger
   */
 class MySaslServer {
 
-    private val logger = Logger("me.babaili.ajabberd.net.MySaslServer")
+    private val logger = Logger("me.babaili.ajabberd.auth.MySaslServer")
 
     private val props = new util.TreeMap[String, String]()
     props.put(Sasl.QOP, "auth")

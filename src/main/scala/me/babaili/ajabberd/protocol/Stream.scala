@@ -5,7 +5,7 @@ import scala.collection._
 import scala.xml._
 
 case class XmlHead() extends Packet {
-    override def toString: String = "<?xml version=\"1.0\"?>"
+    override def toString: String = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
 }
 
 object StreamHead
@@ -16,6 +16,11 @@ object StreamHead
 
     def apply(string:String):StreamHead =
     {
+
+        println("++++++++++++++ stream head")
+        println(string)
+        println("++++++++++++++ stream head")
+
         val xml = XML.loadString(string + StreamTail.tag)
         val attributes = xml.attributes.map( attribute => attribute.key -> attribute.value(0).text )
         apply(xml.scope.uri, attributes.toMap)

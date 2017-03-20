@@ -189,6 +189,7 @@ object XMPPXMLTokenizer {
                             case SaslSuccess.tag => SaslSuccess(xml)
                             case SaslAbort.tag => SaslAbort(xml)
                             case SaslError.tag => SaslError(xml)
+                            case SaslResponse.tag => SaslResponse(xml)
                             case _ => throw new Exception("unknown sasl packet %s".format(xml.label))
                         }
                         case _ => xml.label match

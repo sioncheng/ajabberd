@@ -12,12 +12,12 @@ object SimpleServerTestApp extends App {
 
     println("simple server test app")
 
-    System.setProperty("javax.net.debug", "all")
-    System.setProperty("javax.net.ssl.trustStore", "trustStore")
+    //System.setProperty("javax.net.debug", "all")
+    //System.setProperty("javax.net.ssl.trustStore", "trustStore")
 
     val actorSystem = ActorSystem.create("simple-server-test")
 
-    ApplicationContext.start(actorSystem)
+    //ApplicationContext.start(actorSystem)
 
     val listener = actorSystem.actorOf(Props(classOf[TcpListener], "localhost", 5222))
 

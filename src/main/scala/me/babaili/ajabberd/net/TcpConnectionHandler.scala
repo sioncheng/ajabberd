@@ -9,11 +9,11 @@ import akka.util.ByteString
 import me.babaili.ajabberd.xml.{XMPPXMLTokenizer, XmlTokenizer}
 import me.babaili.ajabberd.util
 import com.typesafe.scalalogging.Logger
-import me.babaili.ajabberd.global.ApplicationContext
+import me.babaili.ajabberd.auth.MySaslServer
 import me.babaili.ajabberd.protocol._
+import me.babaili.ajabberd.xmpp.XmppStreamConnection
 import sun.misc.{BASE64Decoder, BASE64Encoder}
 
-import scala.collection.immutable.HashMap
 
 /**
   * Created by chengyongqiao on 03/02/2017.
@@ -43,15 +43,12 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
     var status = INIT
 
-    val logTitle = "tcp connection handler " + name + " "
-
-    val xmlTokenizer = new XmlTokenizer()
-    var remainedXmlEvents: List[XMLEvent] = List.empty
-
     var tcpConnection: ActorRef = null
     var sslEngine: ActorRef = null
+    var xmppConnection: ActorRef = null
+    var remainedXmlEvents: List[XMLEvent] = List.empty
 
-    val mySaslServer = new MySaslServer()
+    val xmlTokenizer = new XmlTokenizer()
 
     //************************
 
@@ -61,7 +58,9 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
     def receive = {
         case Received(data) =>
-            tcpConnection = sender()
+            if (tcpConnection == null) {
+                tcpConnection = sender()
+            }
             debug(s"received data ${data.decodeString("utf8")}")
             status match {
                 case INIT =>
@@ -70,13 +69,15 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                         case Left(xmlEvents) =>
                             val (packets, remained) = XMPPXMLTokenizer.emit(remainedXmlEvents ::: xmlEvents)
                             remainedXmlEvents = remained
-                            //processXmppPacket(packets)
-                            ApplicationContext.getXmppServer() ! packets
+                            if (xmppConnection == null) {
+                                xmppConnection = context.actorOf(Props(classOf[XmppStreamConnection]))
+                            }
+                            xmppConnection ! packets
                         case Right(exception) =>
                             //
                             processXmlStreamException(exception)
                     }
-                case EXPECT_PROCESS_TLS | EXPECT_NEW_STREAM =>
+                case EXPECT_PROCESS_TLS | EXPECT_NEW_STREAM  =>
                     sslEngine ! SslEngine.SslData(data.toArray)
                 case x =>
                     warn(s"what status ? ${x}")
@@ -89,17 +90,16 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                         status = EXPECT_PROCESS_TLS
                         sslEngine = context.actorOf(Props(classOf[SslEngine]))
                     }
-                case EXPECT_PROCESS_TLS =>
+                case EXPECT_PROCESS_TLS | EXPECT_NEW_STREAM =>
                     debug(s"send wrap request ${x.toString()}")
                     sslEngine ! SslEngine.WrapRequest(x.toString().getBytes())
-                case x =>
-                    warn(s"what status ${x} for send packet")
+                case _ =>
+                    warn(s"what status ${status} for send packet ${x}")
             }
         case SslEngine.WrappedData(bs) =>
             tcpConnection ! Write(ByteString.fromArray(bs))
-            debug("process tls wrap")
+            debug("send tls wrapped data to client")
         case SslEngine.FinishedHandshake() =>
-            status = EXPECT_NEW_STREAM
             debug("ssl engine finished handshake")
         case SslEngine.UnwrappedData(data) =>
             debug(s"unwrapped data ${new String(data)}")
@@ -108,7 +108,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                 case Left(xmlEvents) =>
                     val (packets, remained) = XMPPXMLTokenizer.emit(remainedXmlEvents ::: xmlEvents)
                     remainedXmlEvents = remained
-                    ApplicationContext.getXmppServer() ! packets
+                    xmppConnection ! packets
                 case Right(exception) =>
                     //
                     processXmlStreamException(exception)
@@ -245,22 +245,21 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
     def expectStartStream(xmlEvents: List[XMLEvent]): Unit = {
         //
-
         if (!xmlEvents.head.isStartDocument()) {
             val errorMessage = "first xml event is not start document while expect start stream"
-            logger.debug(logTitle, errorMessage)
+            debug(errorMessage)
             processXmlStreamException(XmlStreamException(errorMessage))
         } else {
             val tail = xmlEvents.tail
             if (!tail.head.isStartElement()){
                 val errorMessage = "second xml event is not start element while expect start stream"
-                logger.debug(logTitle, errorMessage)
+                warn(errorMessage)
                 processXmlStreamException(XmlStreamException(errorMessage))
             } else {
                 val localPort = tail.head.asStartElement().getName().getLocalPart()
                 if (! "stream".equalsIgnoreCase(localPort)){
                     val errorMessage = "second xml event is not stream while expect start stream"
-                    logger.debug(logTitle, errorMessage)
+                    warn(errorMessage)
                     processXmlStreamException(XmlStreamException(errorMessage))
                 } else {
                     status = EXPECT_START_TLS
@@ -276,7 +275,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                         " </mechanisms> " +
                         " </stream:features>"
                     sender() ! Write(ByteString.fromString(startTls))
-                    logger.debug(logTitle + "accept start stream and response features")
+                    debug("accept start stream and response features")
                 }
             }
         }
@@ -334,6 +333,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
     }
 
+    /*
     def processLogin(xmlEvents: List[XMLEvent]): Unit = {
 
         val (_, response) = mySaslServer.evaluateResponse(null)
@@ -414,13 +414,15 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
         }
     }
 
+*/
 
     def processXmlStreamException(e: Exception): Unit = {
         //
-        logger.error("tcp connection handler received wrong xml data: " + e.getMessage(), e)
+        error("tcp connection handler received wrong xml data: " + e.getMessage(), e)
         sender() ! Close //will receive a closed message
     }
 
+    /*
     def processClosed(): Unit = {
         status = CLOSED
         tcpListener ! TcpListener.CloseTcpConnectionHandler(name)
@@ -443,4 +445,5 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
         }
         id
     }
+    */
 }

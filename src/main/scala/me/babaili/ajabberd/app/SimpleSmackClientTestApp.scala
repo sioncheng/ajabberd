@@ -64,16 +64,20 @@ object SimpleSmackClientTestApp extends App {
                 true
             }
         })
+        .setConnectTimeout(10000)
         .build()
 
     val trustPath = getClass().getResource("/netty/client/cChat.jks").getPath()
     System.setProperty("javax.net.ssl.trustStore", trustPath)
+    System.setProperty("javax.net.debug", "all")
 
     val conn = new XMPPTCPConnection(connectionConfiguration)
 
     conn.connect()
 
     logger.debug("connected to server")
+
+    Thread.sleep(2000)
 
     //conn.login("aa", "bbb")
     conn.login()
@@ -110,6 +114,9 @@ object SimpleSmackClientTestApp extends App {
 
     conn.connect()
     */
+
+
+    Thread.sleep(2000)
 
     val hello = new Message()
     hello.setFrom("aa")
