@@ -89,17 +89,9 @@ class XmppStreamConnection extends Actor with util.Logger {
                             sender() ! XmlHead()
                             sender() ! responseHead
 
-                            val mechanism = <mechanisms xmlns={Sasl.namespace}>
-                                <mechanism>
-                                    {SaslMechanism.Plain.toString}
-                                </mechanism> <mechanism>
-                                    {SaslMechanism.DiagestMD5.toString}
-                                </mechanism>
-                            </mechanisms>
+                            val mechanism = <mechanisms xmlns={Sasl.namespace}><mechanism>{SaslMechanism.Plain.toString}</mechanism> <mechanism>{SaslMechanism.DiagestMD5.toString}</mechanism></mechanisms>
 
-                            val comprehension = <compression xmlns="http://jabber.org/features/compress">
-                                <method>zlib</method>
-                            </compression>
+                            val comprehension = <compression xmlns="http://jabber.org/features/compress"><method>zlib</method></compression>
 
                             val features = Features(List(mechanism, comprehension))
 
