@@ -387,7 +387,10 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                         val (ok, response) = mySaslServer.evaluateResponse(decodedResponseBytes)
                         ok match {
                             case true =>
-                                val success = "<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>"
+                                val challengeBase64 = (new BASE64Encoder()).encode(response)
+                                logger.debug(s"success challenge base64 ${challengeBase64}")
+
+                                val success = s"<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>${challengeBase64}</success>"
                                 sslEngine ! SslEngine.WrapRequest(success.getBytes())
                                 status = EXPECT_CHALLENGE_SUCCESS
                             case false =>
