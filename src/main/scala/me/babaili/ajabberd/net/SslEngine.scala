@@ -107,14 +107,16 @@ class SslEngine extends Actor {
     logger.debug(s"packet buffer size ${sslSession.getPacketBufferSize()}")
 
 
-    var tcpConnectionHandler: ActorRef = null
+    var sourceSender: ActorRef = null
     var finishedHandshake: Boolean = false
 
     def receive = {
         case SslData(data) =>
             logger.debug(s"received ${data.length} \r\n ${new String(data)}")
             logger.debug(s"peer net data ${peerNetData.position()} ${peerNetData.limit()} ${peerNetData.capacity()}")
-            tcpConnectionHandler = sender()
+            if (sourceSender == null) {
+                sourceSender = sender()
+            }
             peerNetData.put(data)
             if (!finishedHandshake) {
                 doHandshake()
@@ -145,7 +147,7 @@ class SslEngine extends Actor {
                         val myData = new Array[Byte](peerAppData.limit())
                         peerAppData.get(myData)
                         peerAppData.compact()
-                        tcpConnectionHandler ! UnwrappedData(myData)
+                        sourceSender ! UnwrappedData(myData)
                     }
                     shouldLoop = result.bytesProduced() > 0 && peerNetData.hasRemaining()
                 case Status.BUFFER_OVERFLOW =>
@@ -194,7 +196,7 @@ class SslEngine extends Actor {
                     } else {
                         val myData = new Array[Byte](myNetData.limit())
                         myNetData.get(myData)
-                        tcpConnectionHandler ! WrappedData(myData)
+                        sourceSender ! WrappedData(myData)
                     }
                 case Status.BUFFER_OVERFLOW =>
                     //
@@ -307,7 +309,7 @@ class SslEngine extends Actor {
                                     } else {
                                         val myData = new Array[Byte](myNetData.limit())
                                         myNetData.get(myData)
-                                        tcpConnectionHandler ! WrappedData(myData)
+                                        sourceSender ! WrappedData(myData)
                                     }
                                 case Status.BUFFER_OVERFLOW =>
                                     //
@@ -352,7 +354,7 @@ class SslEngine extends Actor {
         }
 
         if(finishedHandshake) {
-            tcpConnectionHandler ! FinishedHandshake()
+            sourceSender ! FinishedHandshake()
             logger.debug("tel tcp connection handler that finished handshake")
         }
     }

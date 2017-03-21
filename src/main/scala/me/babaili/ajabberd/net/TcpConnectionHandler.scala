@@ -41,7 +41,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
     import Tcp._
     import TcpConnectionHandler._
 
-    var status = INIT
+    var status = EXPECT_START_STREAM
 
     var tcpConnection: ActorRef = null
     var sslEngine: ActorRef = null
@@ -50,16 +50,24 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
     val xmlTokenizer = new XmlTokenizer()
 
-    //************************
-
-
+    val mySaslServer = new MySaslServer()
 
     //************************
 
-    def receive = {
+
+
+    //************************
+
+    def receive = oldreceive
+
+    def newReceive:Receive = {
         case Received(data) =>
             if (tcpConnection == null) {
                 tcpConnection = sender()
+            }
+            if (tcpConnection != null) {
+                val equal = tcpConnection.equals(sender())
+                debug(s"euqal ? ${equal}")
             }
             debug(s"received data ${data.decodeString("utf8")}")
             status match {
@@ -115,7 +123,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
             }
     }
 
-    /*
+
 
     def oldreceive: Receive = {
         case d @ Received(data) =>
@@ -126,7 +134,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                 case EXPECT_PROCESS_TLS | EXPECT_NEW_STREAM |
                      EXPECT_LOGIN | EXPECT_CHALLENGE | EXPECT_CHALLENGE_SUCCESS  |
                      EXPECT_BIND | EXPECT_SESSION =>
-                    sslEngine ! d
+                    sslEngine ! SslEngine.SslData(data.toArray)
                     logger.debug(s"forward receive data to ssl engine")
                 case EXPECT_START_STREAM | EXPECT_START_TLS =>
                     val result = xmlTokenizer.decode(data.toArray)
@@ -161,17 +169,17 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
             logger.debug("close anyway")
             processClosed()
         case SslEngine.WrappedData(bs) =>
-            tcpConnection ! Write(bs)
-            logger.debug("process tls wrap")
+            tcpConnection ! Write(ByteString.fromArray(bs))
+            logger.debug("send tls wrapped data to client")
         case SslEngine.FinishedHandshake() =>
             status = EXPECT_NEW_STREAM
             logger.debug("ssl engine finished handshake")
         case SslEngine.UnwrappedData(bs) =>
-            val decodedString = bs.decodeString("UTF-8")
+            val decodedString = new String(bs)
             logger.debug(s"unwrapped client data ${decodedString}")
             status match {
                 case EXPECT_NEW_STREAM =>
-                    val result = xmlTokenizer.decode(bs.toArray)
+                    val result = xmlTokenizer.decode(bs)
                     result match {
                         case Left(xmlEvents) =>
                             processNewStream(xmlEvents)
@@ -182,7 +190,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                             logger.warn("xml exception", exception)
                     }
                 case EXPECT_LOGIN =>
-                    val result = xmlTokenizer.decode(bs.toArray)
+                    val result = xmlTokenizer.decode(bs)
                     result match {
                         case Left(xmlEvents) =>
                             processLogin(xmlEvents)
@@ -193,7 +201,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                             logger.warn("xml exception", exception)
                     }
                 case EXPECT_CHALLENGE =>
-                    val result = xmlTokenizer.decode(bs.toArray)
+                    val result = xmlTokenizer.decode(bs)
                     result match {
                         case Left(xmlEvents) =>
                             processChallenge(xmlEvents)
@@ -204,7 +212,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                             logger.warn("xml exception", exception)
                     }
                 case EXPECT_CHALLENGE_SUCCESS =>
-                    val result = xmlTokenizer.decode(bs.toArray)
+                    val result = xmlTokenizer.decode(bs)
                     result match {
                         case Left(xmlEvents) =>
                             processChallengeSuccess(xmlEvents)
@@ -215,22 +223,22 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                             logger.warn("xml exception", exception)
                     }
                 case EXPECT_BIND =>
-                    val result = xmlTokenizer.decode(bs.toArray)
+                    val result = xmlTokenizer.decode(bs)
                     result match {
                         case Left(xmlEvents) =>
                             processBind(xmlEvents)
-                            logger.debug("process challenge success")
+                            logger.debug("process bind")
                         case Right(exception) =>
                             //
                             //processXmlStreamException(exception)
                             logger.warn("xml exception", exception)
                     }
                 case EXPECT_SESSION =>
-                    val result = xmlTokenizer.decode(bs.toArray)
+                    val result = xmlTokenizer.decode(bs)
                     result match {
                         case Left(xmlEvents) =>
                             processSession(xmlEvents)
-                            logger.debug("process challenge success")
+                            logger.debug("process expect session")
                         case Right(exception) =>
                             //
                             //processXmlStreamException(exception)
@@ -241,7 +249,6 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
         case x =>
             logger.warn("what? in receive " + x.toString())
     }
-*/
 
     def expectStartStream(xmlEvents: List[XMLEvent]): Unit = {
         //
@@ -249,6 +256,9 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
             val errorMessage = "first xml event is not start document while expect start stream"
             debug(errorMessage)
             processXmlStreamException(XmlStreamException(errorMessage))
+
+
+
         } else {
             val tail = xmlEvents.tail
             if (!tail.head.isStartElement()){
@@ -287,12 +297,29 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
             val errorMessage = "first xml event is not start document while expect start tls"
             logger.debug(errorMessage)
             processXmlStreamException(XmlStreamException(errorMessage))
+
+
+
         } else {
             val name = head.asStartElement().getName().getLocalPart()
             if (! "starttls".equalsIgnoreCase(name)) {
-                val errorMessage = "name of first xml event is not start tls document while expect start tls"
+                val errorMessage = "name of first xml event is not start tls while expect start tls"
                 logger.debug(errorMessage)
-                processXmlStreamException(XmlStreamException(errorMessage))
+
+                if (xmlEvents.head.isStartElement()) {
+                    val localPart = xmlEvents.head.asStartElement().getName().getLocalPart()
+                    if ("auth".equalsIgnoreCase(localPart)) {
+                        debug("process login directly")
+                        status = EXPECT_LOGIN
+                        sslEngine = context.actorOf(Props(classOf[DummySslEngine]))
+                        processLogin(xmlEvents)
+                    }
+                } else {
+                    logger.warn("name of first xml event is not auth neither while expect start tls")
+                    processXmlStreamException(XmlStreamException(errorMessage))
+                }
+
+
             } else {
                 val proceed = "<proceed xmlns=\"urn:ietf:params:xml:ns:xmpp-tls\"/>"
                 logger.debug(proceed)
@@ -333,10 +360,9 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
     }
 
-    /*
     def processLogin(xmlEvents: List[XMLEvent]): Unit = {
 
-        val (_, response) = mySaslServer.evaluateResponse(null)
+        val (_, response) =  mySaslServer.evaluateResponse(null)
         val challengeBase64 = (new BASE64Encoder()).encode(response)
         logger.debug(s"challengeBase64 ${challengeBase64}")
 
@@ -383,12 +409,14 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
     def processChallengeSuccess(xmlEvents: List[XMLEvent]): Unit = {
         val bind = "<stream:stream xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' id='someid' " +
-            "from='localhost' version='1.0'>\n <stream:features>\n <bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'/>\n +" +
-            "    <session xmlns='urn:ietf:params:xml:ns:xmpp-session'/>\n</stream:features>"
+            "from='localhost' version='1.0'><stream:features><bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'/>" +
+            "<session xmlns='urn:ietf:params:xml:ns:xmpp-session'/>" +
+        "</stream:features>"
+
+        status = EXPECT_BIND
 
         sslEngine ! SslEngine.WrapRequest(bind.getBytes())
 
-        status = EXPECT_BIND
     }
 
     def processBind(xmlEvents: List[XMLEvent]): Unit = {
@@ -414,7 +442,6 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
         }
     }
 
-*/
 
     def processXmlStreamException(e: Exception): Unit = {
         //
@@ -422,7 +449,6 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
         sender() ! Close //will receive a closed message
     }
 
-    /*
     def processClosed(): Unit = {
         status = CLOSED
         tcpListener ! TcpListener.CloseTcpConnectionHandler(name)
@@ -445,5 +471,5 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
         }
         id
     }
-    */
+
 }

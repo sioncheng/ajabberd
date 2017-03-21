@@ -40,6 +40,9 @@ libraryDependencies += "org.igniterealtime.smack" % "smack-java7" % "4.1.9"
 libraryDependencies += "org.scala-lang.modules" % "scala-xml_2.11" % "1.0.6"
 // https://mvnrepository.com/artifact/com.twitter/naggati_2.9.2
 //libraryDependencies += "com.twitter" % "naggati_2.9.2" % "4.1.0"
+// https://mvnrepository.com/artifact/org.igniterealtime.smack/smack-im
+libraryDependencies += "org.igniterealtime.smack" % "smack-im" % "4.1.9"
+
 
 
 

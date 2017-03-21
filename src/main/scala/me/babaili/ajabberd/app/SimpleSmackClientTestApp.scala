@@ -1,19 +1,12 @@
 package me.babaili.ajabberd.app
 
-import java.security.{KeyManagementException, NoSuchAlgorithmException}
-import java.util.function.Consumer
 import javax.net.ssl.{HostnameVerifier, SSLSession}
-import javax.security.auth.callback.CallbackHandler
 
 import org.jivesoftware.smack.filter.StanzaFilter
 import org.jivesoftware.smack.{ConnectionConfiguration, SASLAuthentication, StanzaListener}
-import org.jivesoftware.smack.java7.Java7SmackInitializer
 import org.jivesoftware.smack.packet.{Message, Stanza}
-import org.jivesoftware.smack.sasl.SASLMechanism
-import org.jivesoftware.smack.sasl.javax.{SASLDigestMD5Mechanism, SASLPlainMechanism}
+import org.jivesoftware.smack.sasl.javax.{SASLDigestMD5Mechanism}
 import org.jivesoftware.smack.tcp.{XMPPTCPConnection, XMPPTCPConnectionConfiguration}
-import org.jivesoftware.smack.util.TLSUtils
-import org.jxmpp.stringprep.XmppStringprepException
 import org.slf4j.LoggerFactory
 
 /**
@@ -24,7 +17,8 @@ object SimpleSmackClientTestApp extends App {
     val logger = LoggerFactory.getLogger("SimpleSmackClientTestApp")
 
 
-    /*SASLAuthentication.registerSASLMechanism(new SASLMechanism {
+    /*
+    SASLAuthentication.registerSASLMechanism(new SASLMechanism {
         override def checkIfSuccessfulOrThrow() = {
             logger.debug("checkIfSuccessfulOrThrow")
         }
@@ -56,7 +50,9 @@ object SimpleSmackClientTestApp extends App {
         .setPort(5222)
         .setDebuggerEnabled(true)
         .setUsernameAndPassword("aa", "bbb")
-        .setResource("SimpleSmackClientTestApp")
+        //.setUsernameAndPassword("13764096288","13764096288")
+        .setResource("Android")
+        .setSecurityMode(ConnectionConfiguration.SecurityMode.disabled)
         .setHostnameVerifier(new HostnameVerifier {
             override def verify(s: String, sslSession: SSLSession) = {
                 logger.debug(s"s ${s}")
@@ -64,7 +60,6 @@ object SimpleSmackClientTestApp extends App {
                 true
             }
         })
-        .setConnectTimeout(10000)
         .build()
 
     val trustPath = getClass().getResource("/netty/client/cChat.jks").getPath()
@@ -76,8 +71,6 @@ object SimpleSmackClientTestApp extends App {
     conn.connect()
 
     logger.debug("connected to server")
-
-    Thread.sleep(2000)
 
     //conn.login("aa", "bbb")
     conn.login()
@@ -116,11 +109,10 @@ object SimpleSmackClientTestApp extends App {
     */
 
 
-    Thread.sleep(2000)
 
     val hello = new Message()
-    hello.setFrom("aa")
-    hello.setTo("bb")
+    hello.setFrom("13764096288")
+    hello.setTo("13764096288")
     hello.setType(Message.Type.chat)
     hello.setBody("hello")
     hello.setThread("hello-1")
@@ -137,7 +129,10 @@ object SimpleSmackClientTestApp extends App {
     })
 
 
-    Thread.sleep(4 * 1000)
+
+    Thread.sleep(20 * 1000)
+
+
 
     conn.disconnect()
 

@@ -22,7 +22,7 @@ object SimpleServerTestApp extends App {
     val listener = actorSystem.actorOf(Props(classOf[TcpListener], "localhost", 5222))
 
 
-    Thread.sleep(3 * 60 * 1000)
+    Thread.sleep(30 * 60 * 1000)
 
     actorSystem.terminate()
 
