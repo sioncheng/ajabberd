@@ -43,6 +43,25 @@ class XMPPXMLTokenizerSpec  extends FunSpecLike with Matchers {
                     assert(false)
             }
         }
+
+
+        it("should be able to convert xml event to full xml") {
+            val xmlString = "<stream:stream xmlns='jabber:client' a='b' to='localhost' " +
+                "xmlns:stream='http://etherx.jabber.org/streams' version='1.0' from='aa@localhost' xml:lang='en'>"
+
+            val xmlTokenizer = new XmlTokenizer()
+
+            val result = xmlTokenizer.decode(xmlString.getBytes())
+
+            result match {
+                case Left(xmlEvents) =>
+                    val xmlStringAgain = XMPPXMLTokenizer.xmlEventsToXml(xmlEvents)
+                    println(xmlStringAgain)
+                case Right(exception) =>
+                    exception.printStackTrace()
+
+            }
+        }
     }
 
 }

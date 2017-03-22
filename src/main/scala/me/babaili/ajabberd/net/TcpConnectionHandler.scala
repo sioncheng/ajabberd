@@ -41,7 +41,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
     import Tcp._
     import TcpConnectionHandler._
 
-    var status = EXPECT_START_STREAM
+    var status = INIT
 
     var tcpConnection: ActorRef = null
     var sslEngine: ActorRef = null
@@ -58,7 +58,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
     //************************
 
-    def receive = oldreceive
+    def receive = newReceive
 
     def newReceive:Receive = {
         case Received(data) =>

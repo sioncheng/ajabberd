@@ -102,7 +102,7 @@ object XMPPXMLTokenizer {
 
     def attributesToXml(attributes: java.util.Iterator[_]) = {
         val sb = new StringBuilder()
-        if(attributes.hasNext()) {
+        while (attributes.hasNext()) {
             val next = attributes.next().asInstanceOf[Attribute]
             sb.append(" ")
             sb.append(nameToXml(next.getName()))
@@ -131,6 +131,8 @@ object XMPPXMLTokenizer {
 
     def xmlEventToXml(event:XMLEvent) = {
         event.getEventType() match {
+            case XMLStreamConstants.START_DOCUMENT =>
+                ""
             case XMLStreamConstants.START_ELEMENT =>
                 val se = event.asStartElement()
                 val sb = new StringBuilder()
@@ -283,6 +285,7 @@ class XmlTokenizer {
             var hasXmlFrame = reader.hasNext() && reader.next() != AsyncXMLStreamReader.EVENT_INCOMPLETE
             while (hasXmlFrame) {
                 val xmlEvent = allocator.allocate(reader)
+
                 result = result :+ xmlEvent
 
                 hasXmlFrame = reader.hasNext() && reader.next() != AsyncXMLStreamReader.EVENT_INCOMPLETE

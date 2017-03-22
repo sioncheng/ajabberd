@@ -52,7 +52,7 @@ object SimpleSmackClientTestApp extends App {
         .setUsernameAndPassword("aa", "bbb")
         //.setUsernameAndPassword("13764096288","13764096288")
         .setResource("Android")
-        .setSecurityMode(ConnectionConfiguration.SecurityMode.disabled)
+        .setSecurityMode(ConnectionConfiguration.SecurityMode.ifpossible)
         .setHostnameVerifier(new HostnameVerifier {
             override def verify(s: String, sslSession: SSLSession) = {
                 logger.debug(s"s ${s}")

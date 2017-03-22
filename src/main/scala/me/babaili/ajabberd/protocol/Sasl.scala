@@ -29,6 +29,8 @@ object SaslSuccess
 
     def apply():SaslSuccess = apply(<success xmlns={ Sasl.namespace }/>)
 
+    def apply(text: String): SaslSuccess = apply(<success xmlns={ Sasl.namespace }>{text}</success>)
+
     def apply(xml:Node):SaslSuccess = new SaslSuccess(xml)
 }
 

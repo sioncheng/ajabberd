@@ -104,7 +104,7 @@ class XmppStreamConnection extends Actor with util.Logger {
 
                         case EXPECT_NEW_STREAM2 =>
 
-                            /*
+
                             val responseAttributes = HashMap[String, String]("from" -> "localhost",
                                 "id" -> "someid",
                                 "version" -> "1.0")
@@ -120,9 +120,6 @@ class XmppStreamConnection extends Actor with util.Logger {
                             val register = <register xmlns='http://jabber.org/features/iq-register'/>
                             val features = Features(List(bind, session, register))
                             sender() ! features
-                            */
-
-                            sender() ! StreamError(StreamErrorCondition.HostUnknown)
 
                             debug("accept new stream 2 and response features")
 
@@ -154,7 +151,8 @@ class XmppStreamConnection extends Actor with util.Logger {
                     ok match {
                         case true =>
                             debug("sasl success")
-                            sender() ! SaslSuccess()
+                            val challengeBase64 = (new BASE64Encoder()).encode(challenge)
+                            sender() ! SaslSuccess(challengeBase64)
                             status = EXPECT_NEW_STREAM2
                         case false =>
                             val challengeBase64 = (new BASE64Encoder()).encode(challenge)
