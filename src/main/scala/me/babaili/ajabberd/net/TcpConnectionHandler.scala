@@ -11,7 +11,7 @@ import me.babaili.ajabberd.util
 import com.typesafe.scalalogging.Logger
 import me.babaili.ajabberd.auth.MySaslServer
 import me.babaili.ajabberd.protocol._
-import me.babaili.ajabberd.xmpp.XmppStreamConnection
+import me.babaili.ajabberd.xmpp.{XmppEvents, XmppServer, XmppStreamConnection}
 import sun.misc.{BASE64Decoder, BASE64Encoder}
 
 
@@ -52,6 +52,11 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
 
     val mySaslServer = new MySaslServer()
 
+    var useSsl: Boolean = false
+
+    var jid: String = ""
+    var uid: String = ""
+
     //************************
 
 
@@ -64,10 +69,6 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
         case Received(data) =>
             if (tcpConnection == null) {
                 tcpConnection = sender()
-            }
-            if (tcpConnection != null) {
-                val equal = tcpConnection.equals(sender())
-                debug(s"euqal ? ${equal}")
             }
             debug(s"received data ${data.decodeString("utf8")}")
             status match {
@@ -121,6 +122,24 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                     //
                     processXmlStreamException(exception)
             }
+        case XmppEvents.JidAssign(jidValue, uidValue) =>
+            jid = jidValue
+            uid = uidValue
+
+            //net close
+        case PeerClosed =>
+            //
+            logger.debug("peer closed")
+            tcpConnection ! akka.io.Tcp.Close
+            import context.dispatcher
+            context.system.scheduler.scheduleOnce(1 seconds, self, CloseAnyway())
+            //processClose()
+        case Closed =>
+            logger.debug("closed")
+            processClosed()
+        case CloseAnyway() =>
+            logger.debug("close anyway")
+            processClosed()
     }
 
 
@@ -458,6 +477,10 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
         context.stop(self)
         if (sslEngine != null) {
             context.stop(sslEngine)
+        }
+
+        if (xmppConnection != null) {
+            xmppConnection ! XmppEvents.ConnectionClosed(jid, uid)
         }
     }
 

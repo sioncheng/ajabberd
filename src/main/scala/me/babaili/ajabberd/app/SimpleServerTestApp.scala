@@ -17,7 +17,7 @@ object SimpleServerTestApp extends App {
 
     val actorSystem = ActorSystem.create("simple-server-test")
 
-    //ApplicationContext.start(actorSystem)
+    ApplicationContext.start(actorSystem)
 
     val listener = actorSystem.actorOf(Props(classOf[TcpListener], "localhost", 5222))
 

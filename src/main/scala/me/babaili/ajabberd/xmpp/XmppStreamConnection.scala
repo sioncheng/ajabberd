@@ -1,11 +1,10 @@
 package me.babaili.ajabberd.xmpp
 
-import akka.actor.Actor
+import akka.actor.{Actor, ActorRef}
 import me.babaili.ajabberd.auth.MySaslServer
-import me.babaili.ajabberd.net.SslEngine
-import me.babaili.ajabberd.protocol._
-import me.babaili.ajabberd.protocol.extensions.bind.Bind
+import me.babaili.ajabberd.protocol.{message, _}
 import me.babaili.ajabberd.util
+import me.babaili.ajabberd.global.ApplicationContext
 import sun.misc.{BASE64Decoder, BASE64Encoder}
 
 import scala.collection.immutable.HashMap
@@ -22,8 +21,7 @@ class UnexpectedPacketException(val message: String) extends Exception {
 object XmppStreamConnection {
     val INIT = 0
     val EXPECT_NEW_STREAM = 1
-    val EXPECT_SASL_AUTH = 2
-    val EXPECT_NEW_STREAM2 = 3
+    val EXPECT_NEW_STREAM2 = 2
 }
 
 class XmppStreamConnection extends Actor with util.Logger {
@@ -31,14 +29,28 @@ class XmppStreamConnection extends Actor with util.Logger {
     import XmppStreamConnection._
 
     var status = INIT
-    var saslServer: MySaslServer = null
+    var saslServer = new MySaslServer()
+    var clientConnection: ActorRef = null
+    var jid: String = ""
+    var uid: String = ""
 
     def receive = {
         case packets: List[Packet] =>
             debug(s"received packets ${packets.length}")
             handlePackets(packets)
+        case XmppEvents.Response(action, data) =>
+            action match {
+                case XmppEvents.IqResult =>
+                    clientConnection ! data
+                case x: Any =>
+                    warn(s"what ? ${x}")
+            }
+        case ja @ XmppEvents.JidAssign(jidValue, uidValue) =>
+            jid = jidValue
+            uid = uidValue
+            clientConnection ! ja
         case _ =>
-            error("what?")
+            error("what message ?????")
     }
 
     def handlePackets(packets: List[Packet]): Unit = {
@@ -52,6 +64,7 @@ class XmppStreamConnection extends Actor with util.Logger {
                 if (packets.head.isInstanceOf[StreamHead]) {
                     val streamHead = packets.head.asInstanceOf[StreamHead]
                     val fromClient = streamHead.attributes.get("from").getOrElse("")
+                    uid = fromClient.split("@")(0)
 
                     status match {
                         case INIT =>
@@ -63,17 +76,11 @@ class XmppStreamConnection extends Actor with util.Logger {
                             sender() ! responseHead
 
 
-                            val tls = <starttls xmlns={Tls.namespace}>
-                                <required/>
-                            </starttls>
+                            val tls = <starttls xmlns={Tls.namespace}></starttls> //<required/>
 
-                            val mechanism = <mechanisms xmlns={Sasl.namespace}>
-                                <mechanism>
-                                    {SaslMechanism.Plain.toString}
-                                </mechanism>
-                                <mechanism>
-                                    {SaslMechanism.DiagestMD5.toString}
-                                </mechanism>
+                            val mechanism = <mechanisms xmlns={Sasl.namespace}><mechanism>
+                                {SaslMechanism.Plain.toString}</mechanism>
+                                <mechanism>{SaslMechanism.DiagestMD5.toString}</mechanism>
                             </mechanisms>
 
                             val features = Features(List(tls, mechanism))
@@ -83,13 +90,16 @@ class XmppStreamConnection extends Actor with util.Logger {
                             debug("accept start stream and response features")
                         case EXPECT_NEW_STREAM =>
                             val responseAttributes = HashMap[String, String]("from" -> "localhost",
-                                "to" -> "someid")
+                                "to" -> fromClient)
                             val responseHead = StreamHead("jabber:client", responseAttributes)
                             debug(s"stream head ${streamHead}")
                             sender() ! XmlHead()
                             sender() ! responseHead
 
-                            val mechanism = <mechanisms xmlns={Sasl.namespace}><mechanism>{SaslMechanism.Plain.toString}</mechanism> <mechanism>{SaslMechanism.DiagestMD5.toString}</mechanism></mechanisms>
+                            val mechanism = <mechanisms xmlns={Sasl.namespace}>
+                                <mechanism>{SaslMechanism.Plain.toString}</mechanism>
+                                <mechanism>{SaslMechanism.DiagestMD5.toString}</mechanism>
+                            </mechanisms>
 
                             val comprehension = <compression xmlns="http://jabber.org/features/compress"><method>zlib</method></compression>
 
@@ -99,14 +109,9 @@ class XmppStreamConnection extends Actor with util.Logger {
 
                             debug("accept new stream and response features")
 
-                            status = EXPECT_SASL_AUTH
-                            saslServer = new MySaslServer()
-
                         case EXPECT_NEW_STREAM2 =>
-
-
                             val responseAttributes = HashMap[String, String]("from" -> "localhost",
-                                "id" -> "someid",
+                                "id" -> fromClient,
                                 "version" -> "1.0")
                             val responseHead = StreamHead("jabber:client", responseAttributes)
                             debug(s"stream head 2 ${streamHead}")
@@ -159,7 +164,17 @@ class XmppStreamConnection extends Actor with util.Logger {
                             debug(s"challengeBase64 again ${challengeBase64}")
                             sender() ! SaslChallenge(challengeBase64)
                     }
+                } else if (packets.head.isInstanceOf[iq.IQ]) {
+                    if (clientConnection == null) {
+                        clientConnection = sender()
+                    }
+                    val iqStanza = packets.head.asInstanceOf[iq.IQ]
 
+                    debug(s"iq ${iqStanza.toString}")
+                    ApplicationContext.getXmppServer() ! XmppEvents.Command(XmppEvents.IqBind, uid, iqStanza)
+                } else if (packets.head.isInstanceOf[message.Message]) {
+
+                    ApplicationContext.getXmppServer() ! XmppEvents.Command(XmppEvents.MessageRequest, uid, packets.head)
                 } else {
                     supported = false
                     warn(s"unsupported packet now ${packets.head}")

@@ -77,6 +77,17 @@ object SimpleSmackClientTestApp extends App {
 
     logger.debug("logon to server")
 
+    val stanzaListener = new StanzaListener {
+        override def processPacket(packet: Stanza): Unit = {
+
+        }
+    }
+    val stanzaFilter = new StanzaFilter {
+        override def accept(stanza: Stanza): Boolean = {
+            true
+        }
+    }
+    conn.addAsyncStanzaListener( stanzaListener, stanzaFilter);
 
 
 
@@ -117,16 +128,7 @@ object SimpleSmackClientTestApp extends App {
     hello.setBody("hello")
     hello.setThread("hello-1")
 
-    conn.sendStanzaWithResponseCallback(hello, new StanzaFilter {
-        override def accept(stanza: Stanza) = {
-            logger.debug(s"accept package ${stanza.getStanzaId()}")
-            true
-        }
-    }, new StanzaListener {
-        override def processPacket(packet: Stanza) = {
-            logger.debug(s"process package ${packet.getStanzaId()}")
-        }
-    })
+    conn.sendStanza(hello)
 
 
 

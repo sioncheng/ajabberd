@@ -5,6 +5,7 @@ import javax.security.auth.callback._
 import javax.security.sasl.{AuthorizeCallback, RealmCallback, Sasl}
 
 import com.typesafe.scalalogging.Logger
+import me.babaili.ajabberd.data.Passport
 
 /**
   * Created by cyq on 09/03/2017.
@@ -46,8 +47,6 @@ class MySaslServer {
 
                     val ncb = callback.asInstanceOf[NameCallback]
 
-                    //ncb.setName("tony")
-
                     logger.debug(s"name callback ${ncb.getName()} ${ncb.getDefaultName()}")
 
                    defaultUsername = ncb.getDefaultName()
@@ -58,12 +57,7 @@ class MySaslServer {
 
                     val pcb =callback.asInstanceOf[PasswordCallback]
 
-                    //pcb.setPassword("admin1".toCharArray())
-
-
-                    if("aa".equalsIgnoreCase(defaultUsername)) {
-                        pcb.setPassword("bbb".toCharArray())
-                    }
+                    pcb.setPassword(Passport.queryUserPassword(defaultUsername).toCharArray())
 
                     logger.debug(s"password callback ${pcb.getPassword()} ${pcb.isEchoOn()}")
 
