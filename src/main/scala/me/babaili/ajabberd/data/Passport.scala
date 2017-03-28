@@ -1,5 +1,7 @@
 package me.babaili.ajabberd.data
 
+import me.babaili.ajabberd.protocol.JID
+
 /**
   * Created by cyq on 27/03/2017.
   */
@@ -12,10 +14,10 @@ object Passport {
         }
     }
 
-    def queryUserJid(user: String): String = {
+    def queryUserJid(user: String): Option[String] = {
         user match {
-            case "aa" => "jid_aa"
-            case _ => ""
+            case "aa" => Some("jid_aa")
+            case _ => None
         }
     }
 }

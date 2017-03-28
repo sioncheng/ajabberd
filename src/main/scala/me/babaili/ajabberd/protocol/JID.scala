@@ -3,6 +3,8 @@ package protocol
 
 object JID
 {
+    val EmptyJID = JID("","","")
+
     def apply(string:String):JID =
     {
         val array1 = string.split("@")
@@ -15,7 +17,6 @@ object JID
         JID(node, domain, resource)
     }
 }
-
 case class JID(node:String, domain:String, resource:String)
 {
     def validate()

@@ -64,7 +64,7 @@ object SimpleSmackClientTestApp extends App {
 
     val trustPath = getClass().getResource("/netty/client/cChat.jks").getPath()
     System.setProperty("javax.net.ssl.trustStore", trustPath)
-    System.setProperty("javax.net.debug", "all")
+    //System.setProperty("javax.net.debug", "all")
 
     val conn = new XMPPTCPConnection(connectionConfiguration)
 
@@ -122,7 +122,7 @@ object SimpleSmackClientTestApp extends App {
 
 
     val hello = new Message()
-    hello.setFrom("13764096288")
+    //hello.setFrom("13764096288")
     hello.setTo("13764096288")
     hello.setType(Message.Type.chat)
     hello.setBody("hello")

@@ -31,7 +31,7 @@ class XmppStreamConnection extends Actor with util.Logger {
     var status = INIT
     var saslServer = new MySaslServer()
     var clientConnection: ActorRef = null
-    var jid: String = ""
+    var jid: JID = null
     var uid: String = ""
 
     def receive = {
@@ -42,8 +42,10 @@ class XmppStreamConnection extends Actor with util.Logger {
             action match {
                 case XmppEvents.IqResult =>
                     clientConnection ! data
+                case XmppEvents.MessageResponse =>
+                    clientConnection ! data
                 case x: Any =>
-                    warn(s"what ? ${x}")
+                    warn(s"what response ? ${x}")
             }
         case ja @ XmppEvents.JidAssign(jidValue, uidValue) =>
             jid = jidValue
@@ -120,15 +122,19 @@ class XmppStreamConnection extends Actor with util.Logger {
 
                             sender() ! responseHead
 
+                            val compression = <compression xmlns="http://jabber.org/features/compress"><method>zlib</method></compression>
                             val bind = <bind xmlns="urn:ietf:params:xml:ns:xmpp-bind"/>
                             val session = <session xmlns="urn:ietf:params:xml:ns:xmpp-session"/>
                             val register = <register xmlns='http://jabber.org/features/iq-register'/>
-                            val features = Features(List(bind, session, register))
+                            val features = Features(List(compression, bind, session, register))
                             sender() ! features
 
                             debug("accept new stream 2 and response features")
 
                         //this cant be received by client, why?
+
+                        case _ =>
+                            warn("what status ? ")
                     }
 
 
@@ -137,14 +143,27 @@ class XmppStreamConnection extends Actor with util.Logger {
                     sender() ! proceed
                     status = EXPECT_NEW_STREAM
                 } else if (packets.head.isInstanceOf[SaslAuth]) {
-                    val (_, response) = saslServer.evaluateResponse(null)
-                    val challengeBase64 = (new BASE64Encoder()).encode(response)
-                    debug(s"challengeBase64 ${challengeBase64}")
 
-                    val challenge = SaslChallenge(challengeBase64)
+                    val auth = packets.head.asInstanceOf[SaslAuth]
+                    auth.mechanism match {
+                        case SaslMechanism.Plain =>
+                            debug("plain auth")
+                            sender() ! SaslSuccess(auth.value)
+                            status = EXPECT_NEW_STREAM2
 
-                    sender() ! challenge
+                        case SaslMechanism.DiagestMD5 =>
+                            debug("digest md5 auth")
+                            val (_, response) = saslServer.evaluateResponse(null)
+                            val challengeBase64 = (new BASE64Encoder()).encode(response)
+                            debug(s"challengeBase64 ${challengeBase64}")
 
+                            val challenge = SaslChallenge(challengeBase64)
+
+                            sender() ! challenge
+                        case _ =>
+                            warn("unknown mechanism")
+
+                    }
                 } else if (packets.head.isInstanceOf[SaslResponse]) {
                     val response = packets.head.asInstanceOf[SaslResponse]
                     debug(s"response text ${response.responseText}")
@@ -170,11 +189,46 @@ class XmppStreamConnection extends Actor with util.Logger {
                     }
                     val iqStanza = packets.head.asInstanceOf[iq.IQ]
 
-                    debug(s"iq ${iqStanza.toString}")
-                    ApplicationContext.getXmppServer() ! XmppEvents.Command(XmppEvents.IqBind, uid, iqStanza)
-                } else if (packets.head.isInstanceOf[message.Message]) {
 
-                    ApplicationContext.getXmppServer() ! XmppEvents.Command(XmppEvents.MessageRequest, uid, packets.head)
+                    debug(s"iq ${iqStanza.toString}")
+
+                    iqStanza match {
+                        case get @ iq.Get(oid, oto, ofrom, ext) =>
+                            debug(s"get ${get}")
+                            val id = oid.getOrElse("")
+                            val xml = <iq type='result' id={id}>
+                                <query xmlns='jabber:iq:auth'>
+                                    <username/>
+                                    <password/>
+                                    <digest/>
+                                    <resource/>
+                                </query>
+                            </iq>
+                            val res = iq.Result(xml)
+                            debug(s"response to iq get auth ${xml.toString()}")
+                            sender() ! res
+                            //debug("not response to get")
+                        case set @ iq.Set(Some("auth_2"), oto, ofrom, ext) =>
+                            val xml = <iq type='result' id='auth_2'/>
+                            val res = iq.Result(xml)
+                            debug(s"response to iq set auth ${xml.toString()}")
+                            sender() ! res
+                        case _ =>
+                            if (jid == null) {
+                                ApplicationContext.getXmppServer() ! XmppEvents.Command(XmppEvents.IqBind, uid, None, iqStanza)
+                            } else {
+                                ApplicationContext.getXmppServer() ! XmppEvents.Command(XmppEvents.IqBind, uid, Some(jid), iqStanza)
+                            }
+                    }
+
+
+                } else if (packets.head.isInstanceOf[message.Message]) {
+                    if (jid == null) {
+                        ApplicationContext.getXmppServer() ! XmppEvents.Command(XmppEvents.MessageRequest, uid, None, packets.head)
+                    } else {
+                        ApplicationContext.getXmppServer() ! XmppEvents.Command(XmppEvents.MessageRequest, uid, Some(jid), packets.head)
+                    }
+
                 } else {
                     supported = false
                     warn(s"unsupported packet now ${packets.head}")
