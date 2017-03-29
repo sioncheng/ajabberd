@@ -20,7 +20,7 @@ class UnexpectedPacketException(val message: String) extends Exception {
 
 object XmppStreamConnection {
     val INIT = 0
-    val EXPECT_NEW_STREAM = 1
+    val EXPECT_SASL = 1
     val EXPECT_NEW_STREAM2 = 2
 }
 
@@ -51,8 +51,8 @@ class XmppStreamConnection extends Actor with util.Logger {
             jid = jidValue
             uid = uidValue
             clientConnection ! ja
-        case _ =>
-            error("what message ?????")
+        case x =>
+            error(s"what message ????? ${x}")
     }
 
     def handlePackets(packets: List[Packet]): Unit = {
@@ -77,12 +77,12 @@ class XmppStreamConnection extends Actor with util.Logger {
                             sender() ! XmlHead()
                             sender() ! responseHead
 
-
-                            val tls = <starttls xmlns={Tls.namespace}></starttls> //<required/>
+                            val tls = <starttls xmlns={Tls.namespace}><optional/></starttls>
 
                             val mechanism = <mechanisms xmlns={Sasl.namespace}><mechanism>
                                 {SaslMechanism.Plain.toString}</mechanism>
                                 <mechanism>{SaslMechanism.DiagestMD5.toString}</mechanism>
+                                <optional/>
                             </mechanisms>
 
                             val features = Features(List(tls, mechanism))
@@ -90,11 +90,11 @@ class XmppStreamConnection extends Actor with util.Logger {
                             sender() ! features
 
                             debug("accept start stream and response features")
-                        case EXPECT_NEW_STREAM =>
+                        case EXPECT_SASL =>
                             val responseAttributes = HashMap[String, String]("from" -> "localhost",
                                 "to" -> fromClient)
                             val responseHead = StreamHead("jabber:client", responseAttributes)
-                            debug(s"stream head ${streamHead}")
+                            debug(s"stream head ${streamHead} at ${status}")
                             sender() ! XmlHead()
                             sender() ! responseHead
 
@@ -108,8 +108,6 @@ class XmppStreamConnection extends Actor with util.Logger {
                             val features = Features(List(mechanism, comprehension))
 
                             sender() ! features
-
-                            debug("accept new stream and response features")
 
                         case EXPECT_NEW_STREAM2 =>
                             val responseAttributes = HashMap[String, String]("from" -> "localhost",
@@ -141,7 +139,7 @@ class XmppStreamConnection extends Actor with util.Logger {
                 } else if (packets.head.isInstanceOf[StartTls]) {
                     val proceed = TlsProceed()
                     sender() ! proceed
-                    status = EXPECT_NEW_STREAM
+                    status = EXPECT_SASL
                 } else if (packets.head.isInstanceOf[SaslAuth]) {
 
                     val auth = packets.head.asInstanceOf[SaslAuth]
@@ -154,7 +152,7 @@ class XmppStreamConnection extends Actor with util.Logger {
                         case SaslMechanism.DiagestMD5 =>
                             debug("digest md5 auth")
                             val (_, response) = saslServer.evaluateResponse(null)
-                            val challengeBase64 = (new BASE64Encoder()).encode(response)
+                            val challengeBase64 = (new BASE64Encoder()).encode(response).replace("\r","").replace("\n","")
                             debug(s"challengeBase64 ${challengeBase64}")
 
                             val challenge = SaslChallenge(challengeBase64)
@@ -179,7 +177,7 @@ class XmppStreamConnection extends Actor with util.Logger {
                             sender() ! SaslSuccess(challengeBase64)
                             status = EXPECT_NEW_STREAM2
                         case false =>
-                            val challengeBase64 = (new BASE64Encoder()).encode(challenge)
+                            val challengeBase64 = (new BASE64Encoder()).encode(challenge).replace("\r","").replace("\n","")
                             debug(s"challengeBase64 again ${challengeBase64}")
                             sender() ! SaslChallenge(challengeBase64)
                     }
@@ -195,21 +193,68 @@ class XmppStreamConnection extends Actor with util.Logger {
                     iqStanza match {
                         case get @ iq.Get(oid, oto, ofrom, ext) =>
                             debug(s"get ${get}")
+
                             val id = oid.getOrElse("")
+
+
                             val xml = <iq type='result' id={id}>
                                 <query xmlns='jabber:iq:auth'>
-                                    <username/>
+                                    <username>aa</username>
                                     <password/>
                                     <digest/>
                                     <resource/>
                                 </query>
                             </iq>
+
+                            /*
+                            val xml = <iq from='localhost' id={id} type='error'>
+                                <error code='503' type='cancel'>
+                                    <service-unavailable xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>
+                                </error>
+                            </iq>
+                            */
+                            /*
+                            val xml = <iq id={id} type="error">
+                                <query xmlns="jabber:iq:auth">
+                                    <username>aa</username>
+                                </query>
+                                <error code="405" type="CANCEL">
+                                    <not-allowed xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/>
+                                    <text xml:lang="en" xmlns="urn:ietf:params:xml:ns:xmpp-stanzas">Connection must be encrypted.
+                                    </text>
+                                </error>
+                            </iq>*/
                             val res = iq.Result(xml)
                             debug(s"response to iq get auth ${xml.toString()}")
                             sender() ! res
-                            //debug("not response to get")
+
                         case set @ iq.Set(Some("auth_2"), oto, ofrom, ext) =>
                             val xml = <iq type='result' id='auth_2'/>
+                            val res = iq.Result(xml)
+                            debug(s"response to iq set auth ${xml.toString()}")
+                            sender() ! res
+                        case set @ iq.Set(Some(idstr), oto, ofrom, ext) =>
+                            val xml = <iq type='result' id={idstr}/>
+                            /*
+                            val xml = <iq id={idstr} type="error">
+                                <query xmlns="jabber:iq:auth">
+                                    <username>aa</username>
+                                </query>
+                                <error code="405" type="CANCEL">
+                                    <not-allowed xmlns="urn:ietf:params:xml:ns:xmpp-stanzas"/>
+                                    <text xml:lang="en" xmlns="urn:ietf:params:xml:ns:xmpp-stanzas">Connection must be encrypted.
+                                    </text>
+                                </error>
+                            </iq>
+                            */
+
+                            ext match {
+                                case Some(ext) =>
+                                    debug(s"iq set ext ${ext}")
+                                case None =>
+
+                            }
+
                             val res = iq.Result(xml)
                             debug(s"response to iq set auth ${xml.toString()}")
                             sender() ! res

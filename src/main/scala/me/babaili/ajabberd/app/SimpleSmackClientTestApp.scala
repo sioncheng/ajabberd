@@ -55,8 +55,7 @@ object SimpleSmackClientTestApp extends App {
         .setSecurityMode(ConnectionConfiguration.SecurityMode.ifpossible)
         .setHostnameVerifier(new HostnameVerifier {
             override def verify(s: String, sslSession: SSLSession) = {
-                logger.debug(s"s ${s}")
-                logger.debug(s"sslSession ${sslSession.getPeerHost()}")
+                logger.debug(s"s ${s} sslSession ${sslSession.getPeerHost()}")
                 true
             }
         })

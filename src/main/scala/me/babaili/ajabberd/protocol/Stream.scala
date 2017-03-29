@@ -16,11 +16,6 @@ object StreamHead
 
     def apply(string:String):StreamHead =
     {
-
-        println("++++++++++++++ stream head")
-        println(string)
-        println("++++++++++++++ stream head")
-
         val xml = XML.loadString(string + StreamTail.tag)
         val attributes = xml.attributes.map( attribute => attribute.key -> attribute.value(0).text )
         apply(xml.scope.uri, attributes.toMap)

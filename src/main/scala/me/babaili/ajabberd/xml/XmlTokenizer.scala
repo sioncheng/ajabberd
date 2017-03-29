@@ -26,10 +26,10 @@ object XMPPXMLTokenizer {
     val logger = new Logger{}
 
     @tailrec
-    def emit(xmlEvents:List[XMLEvent]): (List[Packet], List[XMLEvent] ) = {
+    def emit(xmlEvents:List[XMLEvent]): (Option[List[Packet]], List[XMLEvent] ) = {
         if(xmlEvents.isEmpty) {
             logger.warn("xml events is empty")
-            (List(NullPacket), xmlEvents)
+            (None, xmlEvents)
         } else {
             logger.debug(s"xml events length ${xmlEvents.length}")
             val head = xmlEvents(0)
@@ -46,9 +46,9 @@ object XMPPXMLTokenizer {
                             val eventXml = xmlEventToXml(head)
                             if (StreamHead.qualifies(eventXml)) {
                                 logger.debug(s"event xml ${eventXml}")
-                                (List(StreamHead(eventXml)), xmlEvents.tail)
+                                (Some(List(StreamHead(eventXml))), xmlEvents.tail)
                             } else if(StreamTail.qualifies(eventXml)) {
-                                (List(StreamTail()), xmlEvents.tail)
+                                (Some(List(StreamTail())), xmlEvents.tail)
                             } else {
                                 import scala.collection.mutable.Stack
                                 val stack = Stack[XMLEvent]()
@@ -58,7 +58,6 @@ object XMPPXMLTokenizer {
                                 while(!tails.isEmpty && !paired){
                                     if(tails.head.isEndElement()) {
                                         val endQName = tails.head.asEndElement().getName()
-                                        println(s"<><<><><><><><><><> ${endQName} ${headQName}")
                                         if(endQName.equals(headQName)) {
                                             paired = true
                                         } else {
@@ -74,9 +73,9 @@ object XMPPXMLTokenizer {
                                 if(paired) {
                                     val totalXml = xmlEventsToXml(stack.toList.reverse)
                                     logger.debug(s"paired ${totalXml}")
-                                    (toPacket(totalXml), tails)
+                                    (Some(toPacket(totalXml)), tails)
                                 } else {
-                                    (List(NullPacket), xmlEvents)
+                                    (None, xmlEvents)
                                 }
                             }
                         case false =>
@@ -84,11 +83,11 @@ object XMPPXMLTokenizer {
                             logger.warn(s"not start element ${head}")
                             head.getEventType()
                             if (head.isCharacters()) {
-                                var chars = head.asCharacters()
+                                val chars = head.asCharacters()
                                 logger.debug(s"chars ${chars.getData()}")
                                 emit(xmlEvents.tail)
                             } else {
-                                (List(NullPacket), xmlEvents)
+                                (None, xmlEvents)
                             }
                     }
             }
@@ -151,7 +150,8 @@ object XMPPXMLTokenizer {
                 sb.append("<")
                 sb.append(nameToXml(se.getName()))
                 sb.append(attributesToXml(se.getAttributes()))
-                //sb.append(namespacesToXml(se.getNamespaces()))
+                sb.append(namespacesToXml(se.getNamespaces()))
+                /*
                 val prefix = se.getName().getPrefix()
                 if (prefix != null && !prefix.isEmpty()) {
                     val namespaceURI = se.getNamespaceURI(prefix)
@@ -164,7 +164,7 @@ object XMPPXMLTokenizer {
                         sb.append(namespaceURI)
                         sb.append("\"")
                     }
-                }
+                }*/
                 sb.append(">")
                 sb.toString()
             case XMLStreamConstants.END_ELEMENT =>

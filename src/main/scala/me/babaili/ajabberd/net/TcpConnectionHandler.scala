@@ -76,25 +76,16 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
                     val result = xmlTokenizer.decode(data.toArray)
                     result match {
                         case Left(xmlEvents) =>
-                            debug(s"decoded xml events length ${xmlEvents.length}")
-                            debug("remained xml events begin ")
-                            remainedXmlEvents.foreach( xe => println(XMPPXMLTokenizer.xmlEventToXml(xe)))
-                            debug("remained xml events end ")
                             var continue: Boolean = true
                             remainedXmlEvents = remainedXmlEvents ::: xmlEvents
                             while(continue) {
-
-                                debug("continue remained xml events begin ")
-                                remainedXmlEvents.foreach( xe => println(XMPPXMLTokenizer.xmlEventToXml(xe)))
-                                debug("continue remained xml events end ")
-
                                 val (packets, remained) = XMPPXMLTokenizer.emit(remainedXmlEvents)
-                                if (packets.length > 0 ) {
+                                if (packets.isEmpty == false) {
                                     remainedXmlEvents = remained
                                     if (xmppConnection == null) {
                                         xmppConnection = context.actorOf(Props(classOf[XmppStreamConnection]))
                                     }
-                                    xmppConnection ! packets
+                                    xmppConnection ! packets.get
                                     if (remainedXmlEvents.length > 0) {
                                         continue = true
                                     } else {
@@ -138,9 +129,30 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor wi
             val result = xmlTokenizer.decode(data)
             result match {
                 case Left(xmlEvents) =>
+                    /*
                     val (packets, remained) = XMPPXMLTokenizer.emit(remainedXmlEvents ::: xmlEvents)
                     remainedXmlEvents = remained
-                    xmppConnection ! packets
+                    xmppConnection ! packets.get*/
+                    var continue: Boolean = true
+                    remainedXmlEvents = remainedXmlEvents ::: xmlEvents
+                    while(continue) {
+                        val (packets, remained) = XMPPXMLTokenizer.emit(remainedXmlEvents)
+                        if (packets.isEmpty == false) {
+                            remainedXmlEvents = remained
+                            if (xmppConnection == null) {
+                                xmppConnection = context.actorOf(Props(classOf[XmppStreamConnection]))
+                            }
+                            xmppConnection ! packets.get
+                            if (remainedXmlEvents.length > 0) {
+                                continue = true
+                            } else {
+                                continue = false
+                            }
+                        } else {
+                            warn("no packets have been emitted")
+                            continue = false
+                        }
+                    }
                 case Right(exception) =>
                     //
                     processXmlStreamException(exception)
