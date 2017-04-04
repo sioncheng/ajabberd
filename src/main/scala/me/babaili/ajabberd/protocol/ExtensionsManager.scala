@@ -123,4 +123,6 @@ object ExtensionsManager extends Logger
     registerBuilder(pubsub.EventBuilder)
     /* rpc */
     registerBuilder(rpc.Builder)
+    /* query */
+    registerBuilder(privacy.Builder)
 }

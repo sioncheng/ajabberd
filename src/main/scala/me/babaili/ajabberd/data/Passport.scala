@@ -10,6 +10,8 @@ object Passport {
     def queryUserPassword(user: String): String = {
         user match {
             case "aa" => "bbb"
+            case "bb" => "bbb"
+            case "cc" => "ccc"
             case _ => ""
         }
     }
@@ -17,6 +19,8 @@ object Passport {
     def queryUserJid(user: String): Option[String] = {
         user match {
             case "aa" => Some("jid_aa")
+            case "bb" => Some("jid_bb")
+            case "cc" => Some("jid_cc")
             case _ => None
         }
     }
