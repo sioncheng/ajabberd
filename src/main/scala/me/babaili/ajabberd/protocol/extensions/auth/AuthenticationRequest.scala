@@ -10,6 +10,8 @@ import Protocol._
 
 object AuthenticationRequest
 {
+    val namespace = "jabber:iq:auth"
+
     def apply(username:String, resource:String, password:Option[String], digest:Option[String]):AuthenticationRequest =
     {
         val children = mutable.ListBuffer[Node]()

@@ -5,6 +5,7 @@ import me.babaili.ajabberd.auth.MySaslServer
 import me.babaili.ajabberd.protocol.{message, _}
 import me.babaili.ajabberd.util
 import me.babaili.ajabberd.global.ApplicationContext
+import me.babaili.ajabberd.protocol.extensions.Query
 import me.babaili.ajabberd.util.Logger
 import me.babaili.ajabberd.xml.XMPPXMLTokenizer
 import sun.misc.{BASE64Decoder, BASE64Encoder}
@@ -138,24 +139,34 @@ class XmppStreamConnection extends Actor {
                             logger.debug(s"iq ${iqStanza.toString}")
 
                             iqStanza match {
-                                case get@iq.Get(oid, oTo, oFrom, ext) =>
-                                    logger.debug(s"get ${get} ${oid}, ${oTo}, ${oFrom}")
+                                case get@iq.Get(oid, oTo, oFrom, Some(extension)) =>
+                                    val ns = extension.namespace.getOrElse("")
+                                    ns match {
+                                        case extensions.auth.AuthenticationRequest.namespace =>
 
-                                    val id = oid.getOrElse("")
+                                            logger.debug(s"get ${get} ${oid}, ${oTo}, ${oFrom}")
+
+                                            val ar = extension.asInstanceOf[extensions.auth.AuthenticationRequest]
 
 
-                                    val xml = <iq type='result' id={id}>
-                                        <query xmlns='jabber:iq:auth'>
-                                            <username>aa</username>
-                                            <password/>
-                                            <digest/>
-                                            <resource/>
-                                        </query>
-                                    </iq>
+                                            val id = oid.getOrElse("")
 
-                                    val res = iq.Result(xml)
-                                    logger.debug(s"response to iq get auth ${xml.toString()}")
-                                    sender() ! res
+
+                                            val xml = <iq type='result' id={id}>
+                                                <query xmlns='jabber:iq:auth'>
+                                                    <username>{ar.username}</username>
+                                                    <password/>
+                                                    <digest/>
+                                                    <resource/>
+                                                </query>
+                                            </iq>
+
+                                            val res = iq.Result(xml)
+                                            logger.debug(s"response to iq get auth ${xml.toString()}")
+                                            sender() ! res
+                                    }
+
+
                             }
 
                         } else {
@@ -225,7 +236,7 @@ class XmppStreamConnection extends Actor {
                                     sender() ! SaslSuccess(challengeBase64)
                                     status = Status.EXPECT_NEW_SESSION
                                 case false =>
-                                    val challengeBase64 = (new BASE64Encoder()).encode(challenge).replace("\r","").replace("\n","")
+                                    val challengeBase64 = (new BASE64Encoder()).encode(challenge).replace("\r", "").replace("\n", "")
                                     logger.debug(s"challengeBase64 again ${challengeBase64}")
                                     sender() ! SaslChallenge(challengeBase64)
                             }
@@ -369,7 +380,7 @@ class XmppStreamConnection extends Actor {
                                                     val idValue = oId.getOrElse("")
                                                     val toJid = oFrom.getOrElse(JID.EmptyJID).toString
 
-                                                    val xml = <iq id={idValue} type="set">
+                                                    val xml = <iq id={idValue} type="result">
                                                         <query xmlns="jabber:iq:roster">
                                                             <item jid="bb@localhost" name="bb">
                                                                 <group>Friends</group>
@@ -382,11 +393,43 @@ class XmppStreamConnection extends Actor {
 
                                                     logger.debug(s"your friends ${xml.toString()}")
                                                     sender() ! iq.Result(xml)
+                                                case "http://jabber.org/protocol/disco#info" =>
+                                                    //xep-0030
+                                                    val idValue = oId.getOrElse("")
+                                                    val toJid = oFrom.getOrElse(JID.EmptyJID).toString
+
+                                                    val xml = <iq type='result' from='localhost' to={toJid} id={idValue}>
+                                                        <query xmlns='http://jabber.org/protocol/disco#info'>
+                                                            <identity
+                                                            category='conference'
+                                                            type='text'
+                                                            name='Play-Specific Chatrooms'/>
+                                                            <identity
+                                                            category='directory'
+                                                            type='chatroom'
+                                                            name='Play-Specific Chatrooms'/>
+                                                            <feature var='http://jabber.org/protocol/disco#info'/>
+                                                            <feature var='http://jabber.org/protocol/disco#items'/>
+                                                            <feature var='http://jabber.org/protocol/muc'/>
+                                                            <feature var='jabber:iq:register'/>
+                                                            <feature var='jabber:iq:search'/>
+                                                            <feature var='jabber:iq:time'/>
+                                                            <feature var='jabber:iq:version'/>
+                                                        </query>
+                                                    </iq>
+
+                                                    logger.debug(s"my services ${xml.toString()}")
+                                                    sender() ! iq.Result(xml)
                                                 case "" =>
                                                     logger.warn("??? empty namespace")
+                                                case x =>
+                                                    logger.error(s"??? unknown namespace ${x} of iq get on status ${status}")
+
+                                                    sender() ! iq.Result(oId,oTo,oFrom,None)
                                             }
                                         case true =>
                                             logger.warn("??? empty extension")
+                                            sender() ! iq.Result(oId,oTo,oFrom,None)
                                     }
                                 case x =>
                                     logger.warn(s"unknown get ${x} duration status ${status}")
