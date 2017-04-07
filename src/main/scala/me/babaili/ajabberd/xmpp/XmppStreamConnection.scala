@@ -2,10 +2,12 @@ package me.babaili.ajabberd.xmpp
 
 import akka.actor.{Actor, ActorRef}
 import me.babaili.ajabberd.auth.MySaslServer
+import me.babaili.ajabberd.data.Passport
 import me.babaili.ajabberd.protocol.{message, _}
 import me.babaili.ajabberd.util
 import me.babaili.ajabberd.global.ApplicationContext
 import me.babaili.ajabberd.protocol.extensions.Query
+import me.babaili.ajabberd.protocol.message.Message
 import me.babaili.ajabberd.util.Logger
 import me.babaili.ajabberd.xml.XMPPXMLTokenizer
 import sun.misc.{BASE64Decoder, BASE64Encoder}
@@ -47,7 +49,7 @@ class XmppStreamConnection extends Actor {
     var status = Status.INIT
     var saslServer = new MySaslServer()
     var clientConnection: ActorRef = null
-    var jid: JID = null
+    var jid: JID = new JID("aa","localhost","")
     var uid: String = ""
 
     def receive: Receive = {
@@ -147,7 +149,7 @@ class XmppStreamConnection extends Actor {
                                             logger.debug(s"get ${get} ${oid}, ${oTo}, ${oFrom}")
 
                                             val ar = extension.asInstanceOf[extensions.auth.AuthenticationRequest]
-
+                                            uid = ar.username
 
                                             val id = oid.getOrElse("")
 
@@ -283,6 +285,9 @@ class XmppStreamConnection extends Actor {
                                         val bind = extension.asInstanceOf[extensions.bind.BindRequest]
                                         val idValue = oId.getOrElse("bind_2")
                                         val resource = bind.resource.getOrElse("")
+                                        if (jid == JID.EmptyJID) {
+                                            jid = JID(uid, "localhost", resource)
+                                        }
                                         val xml = <iq type='result' id={idValue}>
                                             <bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>
                                                 <jid>aa@localhost/
@@ -369,9 +374,9 @@ class XmppStreamConnection extends Actor {
 
                                                     val xml = <iq from='localhost' type='result' id={idValue} to={toJid}>
                                                         <query xmlns='http://jabber.org/protocol/disco#items'>
-                                                            <item jid='aa@localhost'/>
-                                                            <item jid='bb@localhost'/>
-                                                            <item jid='cc@localhost'/>
+                                                            <item jid='aa@localhost' name="aa" subscription="both"/>
+                                                            <item jid='bb@localhost' name="bb" subscription="both"/>
+                                                            <item jid='cc@localhost' name="cc" subscription="both"/>
                                                         </query>
                                                     </iq>
 
@@ -382,10 +387,13 @@ class XmppStreamConnection extends Actor {
 
                                                     val xml = <iq id={idValue} type="result">
                                                         <query xmlns="jabber:iq:roster">
-                                                            <item jid="bb@localhost" name="bb">
+                                                            <item jid="aa@localhost" name="aa" subscription="both">
                                                                 <group>Friends</group>
                                                             </item>
-                                                            <item jid="cc@localhost" name="cc">
+                                                            <item jid="bb@localhost" name="bb" subscription="both">
+                                                                <group>Friends</group>
+                                                            </item>
+                                                            <item jid="cc@localhost" name="cc" subscription="both">
                                                                 <group>Friends</group>
                                                             </item>
                                                         </query>
@@ -494,24 +502,40 @@ class XmppStreamConnection extends Actor {
                                     logger.warn(s"unknown get ${x} duration status ${status}")
                             }
                         } else if (headPacket.isInstanceOf[presence.Presence]) {
-                            val presenceExample = <presence>
-                                <priority>0</priority>
-                                <c ext="ice" ver="1000" node="http://www.apple.com/ichat/caps" xmlns="http://jabber.org/protocol/caps"/>
-                                <x xmlns="http://jabber.org/protocol/tune"/>
-                                <x xmlns="vcard-temp:x:update"/>
-                            </presence>
                             val pre = headPacket.asInstanceOf[presence.Presence]
-
-                            val xml = <presence from='bb@localhost' to='bb@localhost'>
-                                <status>Online</status>
-                                <priority>1</priority>
-                            </presence>
-
-                            //val pre2 = presence.Presence.build(presence.PresenceTypeEnumeration.Available, Some(""), Some(JID("bb", "localhost", "")), Some(JID("bb", "localhost","")))
-
-                            sender() ! Stanza(xml)
-
                             logger.debug(s"presence ${pre.toString}")
+
+                            def tellFriendStatus(from: JID): Unit = {
+                                val xml = <presence from={from.toString()} to={jid.toString()} type="subscribed"/>
+
+                                sender() ! Stanza(xml)
+
+                                val xml2 = <presence from={from.toString()} to={jid.toString()}>
+                                    <show>chat</show>
+                                    <status>hello</status>
+                                    <priority>1</priority>
+                                </presence>
+
+                                sender() ! Stanza(xml2)
+                            }
+
+                            //tellFriendStatus(JID("aa@localhost"))
+                            tellFriendStatus(JID("bb@localhost"))
+                            tellFriendStatus(JID("cc@localhost"))
+
+
+                        } else if (headPacket.isInstanceOf[Message]) {
+                            val inMessage = headPacket.asInstanceOf[Message]
+                            val from = inMessage.from.getOrElse(jid)
+                            val to = inMessage.to.get
+                            val idValue = inMessage.id.getOrElse("chat_1")
+                            logger.debug(s"in message ${from.toString()} ${to.toString()} ${inMessage.body.getOrElse("")}")
+
+                            val echoMessage = <message from={to.toString()} to={from.toString()} type="chat" id={idValue}>
+                                <body>I know what you said: {inMessage.body.getOrElse("")}</body>
+                            </message>
+
+                            sender() ! Message(echoMessage)
 
                         } else {
                             logger.warn(s"unknown packet ${headPacket.toString()} duration status ${status}")
