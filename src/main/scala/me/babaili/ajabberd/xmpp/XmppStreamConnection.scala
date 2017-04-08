@@ -308,6 +308,7 @@ class XmppStreamConnection extends Actor {
                                         ns match {
                                             case extensions.privacy.PrivacyQuery.namespace =>
                                                 println(s"~~~~~~~~~~~~~  ${ns}")
+
                                         }
 
                                         logger.debug(s"${query.toString()}")
@@ -374,9 +375,7 @@ class XmppStreamConnection extends Actor {
 
                                                     val xml = <iq from='localhost' type='result' id={idValue} to={toJid}>
                                                         <query xmlns='http://jabber.org/protocol/disco#items'>
-                                                            <item jid='aa@localhost' name="aa" subscription="both"/>
-                                                            <item jid='bb@localhost' name="bb" subscription="both"/>
-                                                            <item jid='cc@localhost' name="cc" subscription="both"/>
+                                                            <item jid='localhost'/>
                                                         </query>
                                                     </iq>
 
@@ -409,13 +408,11 @@ class XmppStreamConnection extends Actor {
                                                     val xml = <iq type='result' from='localhost' to={toJid} id={idValue}>
                                                         <query xmlns='http://jabber.org/protocol/disco#info'>
                                                             <identity
-                                                            category='conference'
-                                                            type='text'
-                                                            name='Play-Specific Chatrooms'/>
+                                                            category="server" type="im" name="Tigase ver. 0.0.0-0"/>
                                                             <identity
-                                                            category='directory'
-                                                            type='chatroom'
-                                                            name='Play-Specific Chatrooms'/>
+                                                            category='conference' type='text' name='Play-Specific Chatrooms'/>
+                                                            <identity
+                                                            category='directory' type='chatroom' name='Play-Specific Chatrooms'/>
                                                             <feature var='http://jabber.org/protocol/disco#info'/>
                                                             <feature var='http://jabber.org/protocol/disco#items'/>
                                                             <feature var='http://jabber.org/protocol/muc'/>
@@ -438,9 +435,14 @@ class XmppStreamConnection extends Actor {
                                         case true =>
                                             logger.warn("??? empty extension")
 
+                                            //we might need to build more extension class
+                                            val headString = headPacket.toString()
+                                            logger.debug(s"head string ${headString}")
+
                                             val idValue = oId.getOrElse("v1")
-                                            if (headPacket.toString().indexOf("vCard") > 0) {
-                                                val xml = <iq id={idValue} to='bb@localhost' type='result'>
+                                            val fromValue = oTo.getOrElse(JID.EmptyJID).toString()
+                                            if (headString.indexOf("vCard") > 0) {
+                                                val xml = <iq id={idValue} from={fromValue} to='aa@localhost' type='result'>
                                                     <vCard xmlns='vcard-temp'>
                                                         <FN>Peter Saint-Andre</FN>
                                                         <N>
@@ -457,9 +459,20 @@ class XmppStreamConnection extends Actor {
                                                         </ORG>
                                                         <TITLE>Executive Director</TITLE>
                                                         <ROLE>Patron Saint</ROLE>
-                                                        <TEL><WORK/><VOICE/><NUMBER>303-308-3282</NUMBER></TEL>
-                                                        <TEL><WORK/><FAX/><NUMBER/></TEL>
-                                                        <TEL><WORK/><MSG/><NUMBER/></TEL>
+                                                        <TEL>
+                                                            <WORK/>
+                                                            <VOICE/> <NUMBER>303-308-3282</NUMBER>
+                                                        </TEL>
+                                                        <TEL>
+                                                            <WORK/>
+                                                            <FAX/>
+                                                            <NUMBER/>
+                                                        </TEL>
+                                                        <TEL>
+                                                            <WORK/>
+                                                            <MSG/>
+                                                            <NUMBER/>
+                                                        </TEL>
                                                         <ADR>
                                                             <WORK/>
                                                             <EXTADD>Suite 600</EXTADD>
@@ -469,9 +482,20 @@ class XmppStreamConnection extends Actor {
                                                             <PCODE>80202</PCODE>
                                                             <CTRY>USA</CTRY>
                                                         </ADR>
-                                                        <TEL><HOME/><VOICE/><NUMBER>303-555-1212</NUMBER></TEL>
-                                                        <TEL><HOME/><FAX/><NUMBER/></TEL>
-                                                        <TEL><HOME/><MSG/><NUMBER/></TEL>
+                                                        <TEL>
+                                                            <HOME/>
+                                                            <VOICE/> <NUMBER>303-555-1212</NUMBER>
+                                                        </TEL>
+                                                        <TEL>
+                                                            <HOME/>
+                                                            <FAX/>
+                                                            <NUMBER/>
+                                                        </TEL>
+                                                        <TEL>
+                                                            <HOME/>
+                                                            <MSG/>
+                                                            <NUMBER/>
+                                                        </TEL>
                                                         <ADR>
                                                             <HOME/>
                                                             <EXTADD/>
@@ -481,7 +505,10 @@ class XmppStreamConnection extends Actor {
                                                             <PCODE>80209</PCODE>
                                                             <CTRY>USA</CTRY>
                                                         </ADR>
-                                                        <EMAIL><INTERNET/><PREF/><USERID>stpeter@jabber.org</USERID></EMAIL>
+                                                        <EMAIL>
+                                                            <INTERNET/>
+                                                            <PREF/> <USERID>stpeter@jabber.org</USERID>
+                                                        </EMAIL>
                                                         <JABBERID>stpeter@jabber.org</JABBERID>
                                                         <DESC>
                                                             More information about me is located on my
@@ -491,7 +518,17 @@ class XmppStreamConnection extends Actor {
                                                 </iq>
 
                                                 sender() ! iq.Result(xml)
+                                            } else if (headString.indexOf("jabber:iq:last") > 0) {
+                                                //https://xmpp.org/extensions/xep-0012.html
+                                                val idValue = oId.getOrElse("last_1")
+                                                val xml = <iq from='juliet@capulet.com'
+                                                    id={idValue}
+                                                    to={oFrom.getOrElse(JID.EmptyJID).toString()}
+                                                    type='result'>
+                                                    <query xmlns='jabber:iq:last' seconds='903'>Heading Home</query>
+                                                </iq>
 
+                                                sender() ! iq.Result(xml)
                                             } else {
                                                 sender() ! iq.Result(oId,oTo,oFrom,None)
                                             }
@@ -530,9 +567,11 @@ class XmppStreamConnection extends Actor {
                             val to = inMessage.to.get
                             val idValue = inMessage.id.getOrElse("chat_1")
                             logger.debug(s"in message ${from.toString()} ${to.toString()} ${inMessage.body.getOrElse("")}")
-
+                            inMessage.extensions.foreach( x => logger.debug(s"in message extension ${x}"))
                             val echoMessage = <message from={to.toString()} to={from.toString()} type="chat" id={idValue}>
                                 <body>I know what you said: {inMessage.body.getOrElse("")}</body>
+                                <thread>{inMessage.thread.getOrElse("")}</thread>
+                                <active xmlns='http://jabber.org/protocol/chatstates'/>
                             </message>
 
                             sender() ! Message(echoMessage)
