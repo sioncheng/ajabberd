@@ -290,9 +290,7 @@ class XmppStreamConnection extends Actor {
                                         }
                                         val xml = <iq type='result' id={idValue}>
                                             <bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>
-                                                <jid>aa@localhost/
-                                                    {resource}
-                                                </jid>
+                                                <jid>aa@localhost/{resource}</jid>
                                             </bind>
                                         </iq>
 
@@ -364,176 +362,196 @@ class XmppStreamConnection extends Actor {
                             }
                         } else if (headPacket.isInstanceOf[iq.Get]) {
                             headPacket match {
-                                case get@iq.Get(oId, oTo, oFrom, oExtension) =>
-                                    oExtension.isEmpty match {
-                                        case false =>
-                                            val query = oExtension.get.asInstanceOf[extensions.Query]
-                                            query.namespace.getOrElse("") match {
-                                                case "http://jabber.org/protocol/disco#items" =>
-                                                    val idValue = oId.getOrElse("")
-                                                    val toJid = oFrom.getOrElse(JID.EmptyJID).toString
+                                case get @ iq.Get(oId, oTo, oFrom, Some(extension)) =>
+                                    val query = extension.asInstanceOf[extensions.Query]
+                                    val ns = query.namespace.getOrElse("")
+                                    ns match {
+                                        case "http://jabber.org/protocol/disco#items" =>
+                                            val idValue = oId.getOrElse("")
+                                            val toJid = oFrom.getOrElse(JID.EmptyJID).toString
 
-                                                    val xml = <iq from='localhost' type='result' id={idValue} to={toJid}>
-                                                        <query xmlns='http://jabber.org/protocol/disco#items'>
-                                                            <item jid='localhost'/>
-                                                        </query>
-                                                    </iq>
+                                            val xml = <iq from='localhost' type='result' id={idValue} to={toJid}>
+                                                <query xmlns='http://jabber.org/protocol/disco#items'>
+                                                    <item jid='localhost'/>
+                                                </query>
+                                            </iq>
 
-                                                    sender() ! iq.Result(xml)
-                                                case "jabber:iq:roster" =>
-                                                    val idValue = oId.getOrElse("")
-                                                    val toJid = oFrom.getOrElse(JID.EmptyJID).toString
+                                            sender() ! iq.Result(xml)
+                                        case "jabber:iq:roster" =>
+                                            val idValue = oId.getOrElse("")
+                                            val toJid = oFrom.getOrElse(JID.EmptyJID).toString
 
-                                                    val xml = <iq id={idValue} type="result">
-                                                        <query xmlns="jabber:iq:roster">
-                                                            <item jid="aa@localhost" name="aa" subscription="both">
-                                                                <group>Friends</group>
-                                                            </item>
-                                                            <item jid="bb@localhost" name="bb" subscription="both">
-                                                                <group>Friends</group>
-                                                            </item>
-                                                            <item jid="cc@localhost" name="cc" subscription="both">
-                                                                <group>Friends</group>
-                                                            </item>
-                                                        </query>
-                                                    </iq>
+                                            val xml = <iq id={idValue} type="result" to={toJid}>
+                                                <query xmlns="jabber:iq:roster">
+                                                    <item jid="aa@localhost" name="aa" subscription="both">
+                                                        <group>Friends</group>
+                                                    </item>
+                                                    <item jid="bb@localhost" name="bb" subscription="both">
+                                                        <group>Friends</group>
+                                                    </item>
+                                                    <item jid="cc@localhost" name="cc" subscription="both">
+                                                        <group>Friends</group>
+                                                    </item>
+                                                </query>
+                                            </iq>
 
-                                                    logger.debug(s"your friends ${xml.toString()}")
-                                                    sender() ! iq.Result(xml)
-                                                case "http://jabber.org/protocol/disco#info" =>
-                                                    //xep-0030
-                                                    val idValue = oId.getOrElse("")
-                                                    val toJid = oFrom.getOrElse(JID.EmptyJID).toString
+                                            logger.debug(s"your friends ${xml.toString()}")
+                                            sender() ! iq.Result(xml)
+                                        case "http://jabber.org/protocol/disco#info" =>
+                                            //xep-0030
+                                            val idValue = oId.getOrElse("")
+                                            val toJid = oFrom.getOrElse(JID.EmptyJID).toString
 
-                                                    val xml = <iq type='result' from='localhost' to={toJid} id={idValue}>
-                                                        <query xmlns='http://jabber.org/protocol/disco#info'>
-                                                            <identity
-                                                            category="server" type="im" name="Tigase ver. 0.0.0-0"/>
-                                                            <identity
-                                                            category='conference' type='text' name='Play-Specific Chatrooms'/>
-                                                            <identity
-                                                            category='directory' type='chatroom' name='Play-Specific Chatrooms'/>
-                                                            <feature var='http://jabber.org/protocol/disco#info'/>
-                                                            <feature var='http://jabber.org/protocol/disco#items'/>
-                                                            <feature var='http://jabber.org/protocol/muc'/>
-                                                            <feature var='jabber:iq:register'/>
-                                                            <feature var='jabber:iq:search'/>
-                                                            <feature var='jabber:iq:time'/>
-                                                            <feature var='jabber:iq:version'/>
-                                                        </query>
-                                                    </iq>
+                                            val xml = <iq type='result' from='localhost' to={toJid} id={idValue}>
+                                                <query xmlns='http://jabber.org/protocol/disco#info'>
+                                                    <identity
+                                                    category="server" type="im" name="Tigase ver. 0.0.0-0"/>
+                                                    <identity
+                                                    category='conference' type='text' name='Play-Specific Chatrooms'/>
+                                                    <identity
+                                                    category='directory' type='chatroom' name='Play-Specific Chatrooms'/>
+                                                    <feature var='http://jabber.org/protocol/disco#info'/>
+                                                    <feature var='http://jabber.org/protocol/disco#items'/>
+                                                    <feature var='http://jabber.org/protocol/muc'/>
+                                                    <feature var='jabber:iq:register'/>
+                                                    <feature var='jabber:iq:search'/>
+                                                    <feature var='jabber:iq:time'/>
+                                                    <feature var='jabber:iq:version'/>
+                                                </query>
+                                            </iq>
 
-                                                    logger.debug(s"my services ${xml.toString()}")
-                                                    sender() ! iq.Result(xml)
-                                                case "" =>
-                                                    logger.warn("??? empty namespace")
-                                                case x =>
-                                                    logger.error(s"??? unknown namespace ${x} of iq get on status ${status}")
+                                            logger.debug(s"my services ${xml.toString()}")
+                                            sender() ! iq.Result(xml)
+                                        case extensions.get.PrivateQuery.namespace =>
+                                            val result = iq.Result(Some(oId.getOrElse("private_1")),
+                                                Some(oFrom.getOrElse(jid)),
+                                                Some(JID("@localhost")),
+                                                Some(extension))
+                                            sender() ! result
+                                        case extensions.get.LastQuery.namespace =>
+                                            val xml = <iq
+                                            from='localhost'
+                                            id={oId.getOrElse("last_1")}
+                                            to={oFrom.getOrElse(jid).toString()}
+                                            type='result'>
+                                                <query xmlns='jabber:iq:last' seconds='903'>Heading Home</query>
+                                            </iq>
 
-                                                    sender() ! iq.Result(oId,oTo,oFrom,None)
-                                            }
-                                        case true =>
-                                            logger.warn("??? empty extension")
+                                            logger.debug("https://xmpp.org/extensions/xep-0012.html")
+                                            sender() ! iq.Result(xml)
+                                        case "" =>
+                                            logger.warn("??? empty namespace")
+                                        case x =>
+                                            logger.error(s"??? unknown namespace ${x} of iq get on status ${status}")
 
-                                            //we might need to build more extension class
-                                            val headString = headPacket.toString()
-                                            logger.debug(s"head string ${headString}")
+                                            sender() ! iq.Result(oId,oTo,oFrom,None)
+                                    }
 
-                                            val idValue = oId.getOrElse("v1")
-                                            val fromValue = oTo.getOrElse(JID.EmptyJID).toString()
-                                            if (headString.indexOf("vCard") > 0) {
-                                                val xml = <iq id={idValue} from={fromValue} to='aa@localhost' type='result'>
-                                                    <vCard xmlns='vcard-temp'>
-                                                        <FN>Peter Saint-Andre</FN>
-                                                        <N>
-                                                            <FAMILY>Saint-Andre</FAMILY>
-                                                            <GIVEN>Peter</GIVEN>
-                                                            <MIDDLE/>
-                                                        </N>
-                                                        <NICKNAME>stpeter</NICKNAME>
-                                                        <URL>http://www.xmpp.org/xsf/people/stpeter.shtml</URL>
-                                                        <BDAY>1966-08-06</BDAY>
-                                                        <ORG>
-                                                            <ORGNAME>XMPP Standards Foundation</ORGNAME>
-                                                            <ORGUNIT/>
-                                                        </ORG>
-                                                        <TITLE>Executive Director</TITLE>
-                                                        <ROLE>Patron Saint</ROLE>
-                                                        <TEL>
-                                                            <WORK/>
-                                                            <VOICE/> <NUMBER>303-308-3282</NUMBER>
-                                                        </TEL>
-                                                        <TEL>
-                                                            <WORK/>
-                                                            <FAX/>
-                                                            <NUMBER/>
-                                                        </TEL>
-                                                        <TEL>
-                                                            <WORK/>
-                                                            <MSG/>
-                                                            <NUMBER/>
-                                                        </TEL>
-                                                        <ADR>
-                                                            <WORK/>
-                                                            <EXTADD>Suite 600</EXTADD>
-                                                            <STREET>1899 Wynkoop Street</STREET>
-                                                            <LOCALITY>Denver</LOCALITY>
-                                                            <REGION>CO</REGION>
-                                                            <PCODE>80202</PCODE>
-                                                            <CTRY>USA</CTRY>
-                                                        </ADR>
-                                                        <TEL>
-                                                            <HOME/>
-                                                            <VOICE/> <NUMBER>303-555-1212</NUMBER>
-                                                        </TEL>
-                                                        <TEL>
-                                                            <HOME/>
-                                                            <FAX/>
-                                                            <NUMBER/>
-                                                        </TEL>
-                                                        <TEL>
-                                                            <HOME/>
-                                                            <MSG/>
-                                                            <NUMBER/>
-                                                        </TEL>
-                                                        <ADR>
-                                                            <HOME/>
-                                                            <EXTADD/>
-                                                            <STREET/>
-                                                            <LOCALITY>Denver</LOCALITY>
-                                                            <REGION>CO</REGION>
-                                                            <PCODE>80209</PCODE>
-                                                            <CTRY>USA</CTRY>
-                                                        </ADR>
-                                                        <EMAIL>
-                                                            <INTERNET/>
-                                                            <PREF/> <USERID>stpeter@jabber.org</USERID>
-                                                        </EMAIL>
-                                                        <JABBERID>stpeter@jabber.org</JABBERID>
-                                                        <DESC>
-                                                            More information about me is located on my
-                                                            personal website: http://www.saint-andre.com/
-                                                        </DESC>
-                                                    </vCard>
-                                                </iq>
+                                case get @ iq.Get(oId, oTo, oFrom, None) =>
+                                    logger.warn("??? empty extension")
 
-                                                sender() ! iq.Result(xml)
-                                            } else if (headString.indexOf("jabber:iq:last") > 0) {
-                                                //https://xmpp.org/extensions/xep-0012.html
-                                                val idValue = oId.getOrElse("last_1")
-                                                val xml = <iq from='juliet@capulet.com'
-                                                    id={idValue}
-                                                    to={oFrom.getOrElse(JID.EmptyJID).toString()}
-                                                    type='result'>
-                                                    <query xmlns='jabber:iq:last' seconds='903'>Heading Home</query>
-                                                </iq>
+                                    //we might need to build more extension class
+                                    val headString = headPacket.toString()
+                                    logger.debug(s"head string ${headString}")
 
-                                                sender() ! iq.Result(xml)
-                                            } else {
-                                                sender() ! iq.Result(oId,oTo,oFrom,None)
-                                            }
+                                    val idValue = oId.getOrElse("v1")
+                                    val fromValue = oTo.getOrElse(JID.EmptyJID).toString()
+                                    if (headString.indexOf("vCard") > 0) {
+                                        val xml = <iq id={idValue} from={fromValue} to='aa@localhost' type='result'>
+                                            <vCard xmlns='vcard-temp'>
+                                                <FN>Peter Saint-Andre</FN>
+                                                <N>
+                                                    <FAMILY>Saint-Andre</FAMILY>
+                                                    <GIVEN>Peter</GIVEN>
+                                                    <MIDDLE/>
+                                                </N>
+                                                <NICKNAME>stpeter</NICKNAME>
+                                                <URL>http://www.xmpp.org/xsf/people/stpeter.shtml</URL>
+                                                <BDAY>1966-08-06</BDAY>
+                                                <ORG>
+                                                    <ORGNAME>XMPP Standards Foundation</ORGNAME>
+                                                    <ORGUNIT/>
+                                                </ORG>
+                                                <TITLE>Executive Director</TITLE>
+                                                <ROLE>Patron Saint</ROLE>
+                                                <TEL>
+                                                    <WORK/>
+                                                    <VOICE/> <NUMBER>303-308-3282</NUMBER>
+                                                </TEL>
+                                                <TEL>
+                                                    <WORK/>
+                                                    <FAX/>
+                                                    <NUMBER/>
+                                                </TEL>
+                                                <TEL>
+                                                    <WORK/>
+                                                    <MSG/>
+                                                    <NUMBER/>
+                                                </TEL>
+                                                <ADR>
+                                                    <WORK/>
+                                                    <EXTADD>Suite 600</EXTADD>
+                                                    <STREET>1899 Wynkoop Street</STREET>
+                                                    <LOCALITY>Denver</LOCALITY>
+                                                    <REGION>CO</REGION>
+                                                    <PCODE>80202</PCODE>
+                                                    <CTRY>USA</CTRY>
+                                                </ADR>
+                                                <TEL>
+                                                    <HOME/>
+                                                    <VOICE/> <NUMBER>303-555-1212</NUMBER>
+                                                </TEL>
+                                                <TEL>
+                                                    <HOME/>
+                                                    <FAX/>
+                                                    <NUMBER/>
+                                                </TEL>
+                                                <TEL>
+                                                    <HOME/>
+                                                    <MSG/>
+                                                    <NUMBER/>
+                                                </TEL>
+                                                <ADR>
+                                                    <HOME/>
+                                                    <EXTADD/>
+                                                    <STREET/>
+                                                    <LOCALITY>Denver</LOCALITY>
+                                                    <REGION>CO</REGION>
+                                                    <PCODE>80209</PCODE>
+                                                    <CTRY>USA</CTRY>
+                                                </ADR>
+                                                <EMAIL>
+                                                    <INTERNET/>
+                                                    <PREF/> <USERID>stpeter@jabber.org</USERID>
+                                                </EMAIL>
+                                                <JABBERID>stpeter@jabber.org</JABBERID>
+                                                <DESC>
+                                                    More information about me is located on my
+                                                    personal website: http://www.saint-andre.com/
+                                                </DESC>
+                                            </vCard>
+                                        </iq>
 
+                                        sender() ! iq.Result(xml)
+                                    } else if (headString.indexOf("jabber:iq:last") > 0) {
+                                        //https://xmpp.org/extensions/xep-0012.html
+                                        val idValue = oId.getOrElse("last_1")
+                                        val xml = <iq from='juliet@capulet.com'
+                                                      id={idValue}
+                                                      to={oFrom.getOrElse(jid).toString()}
+                                                      type='result'>
+                                            <query xmlns='jabber:iq:last' seconds='903'>Heading Home</query>
+                                        </iq>
 
+                                        logger.debug("https://xmpp.org/extensions/xep-0012.html")
+                                        sender() ! iq.Result(xml)
+                                    } else if (headString.indexOf("http://www.jivesoftware.org/protocol/sharedgroup") > 0) {
+                                        val xml = <iq type="result" id={oId.getOrElse("")} to={oFrom.getOrElse(jid).toString()}>
+                                            <sharedgroup xmlns="http://www.jivesoftware.org/protocol/sharedgroup"/>
+                                        </iq>
+                                       sender() ! iq.Result(xml)
+                                    } else {
+                                        sender() ! iq.Result(oId,oTo,Some(oFrom.getOrElse(jid)),None)
                                     }
                                 case x =>
                                     logger.warn(s"unknown get ${x} duration status ${status}")
@@ -549,7 +567,7 @@ class XmppStreamConnection extends Actor {
 
                                 val xml2 = <presence from={from.toString()} to={jid.toString()}>
                                     <show>chat</show>
-                                    <status>hello</status>
+                                    <status>Online</status>
                                     <priority>1</priority>
                                 </presence>
 

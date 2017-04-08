@@ -93,7 +93,10 @@ object ExtensionsManager extends Logger
 
     private def getKey(builder:ExtensionBuilder[_]):String = getKey(builder.tag, builder.namespace)
     private def getKey(node:Node):String = getKey(node.label, node.scope.uri)
-    private def getKey(tag:String, namespace:String):String = tag + "~" + namespace
+    private def getKey(tag:String, namespace:String):String = {
+        println(s"****************** get key ${tag}~${namespace}")
+        tag + "~" + namespace
+    }
 
     // well known extensions
 
@@ -123,6 +126,14 @@ object ExtensionsManager extends Logger
     registerBuilder(pubsub.EventBuilder)
     /* rpc */
     registerBuilder(rpc.Builder)
-    /* query */
+    /* query extensions */
     registerBuilder(privacy.Builder)
+    registerBuilder(extensions.get.PrivateQueryBuilder)
+    registerBuilder(extensions.get.LastQueryBuilder)
+    /* chat states */
+    registerBuilder(extensions.message.ActiveStateBuilder)
+    registerBuilder(extensions.message.InactiveStateBuilder)
+    registerBuilder(extensions.message.ComposingStateBuilder)
+    registerBuilder(extensions.message.PausedStateBuilder)
+    registerBuilder(extensions.message.GoneStateBuilder)
 }
