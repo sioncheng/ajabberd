@@ -7,7 +7,7 @@ import akka.actor.{Actor, ActorRef, Props}
 import akka.io.Tcp._
 import akka.util.ByteString
 import me.babaili.ajabberd.net.TcpConnectionHandler.CloseAnyway
-import me.babaili.ajabberd.protocol.{JID, Packet, TlsProceed}
+import me.babaili.ajabberd.protocol.{JID, Packet, SaslSuccess, TlsProceed}
 import me.babaili.ajabberd.util.Logger
 import me.babaili.ajabberd.xml.{XMPPXMLTokenizer, XmlTokenizer}
 import me.babaili.ajabberd.xmpp.{XmppEvents, XmppStreamConnection}
@@ -33,7 +33,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
     import TcpConnectionHandler.Status
 
     val logger = new Logger {}
-    val xmlTokenizer = new XmlTokenizer
+    var xmlTokenizer = new XmlTokenizer
 
     var tcpConnection: ActorRef = null
     var status = Status.INIT
@@ -92,10 +92,15 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
                     if (x.isInstanceOf[TlsProceed]) {
                         status = Status.TLS
                         sslEngine = context.actorOf(Props(classOf[SslEngine]))
+                        xmlTokenizer = new XmlTokenizer
                     }
                 case Status.TLS =>
                     logger.debug(s"send wrap request ${x.toString()}")
                     sslEngine ! SslEngine.WrapRequest(x.toString().getBytes())
+
+                    if (x.isInstanceOf[SaslSuccess]) {
+                        xmlTokenizer = new XmlTokenizer
+                    }
                 case _ =>
                     logger.warn(s"what status ${status} for send packet ${x}")
             }

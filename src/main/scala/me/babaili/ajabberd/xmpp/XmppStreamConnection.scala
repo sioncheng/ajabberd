@@ -232,11 +232,8 @@ class XmppStreamConnection extends Actor {
                 <mechanism>{SaslMechanism.DiagestMD5.toString}</mechanism>
             </mechanisms>
 
-            val comprehension = <compression xmlns="http://jabber.org/features/compress">
-                <method>zlib</method>
-            </compression>
 
-            val features = Features(List(mechanism, comprehension))
+            val features = Features(List(mechanism))
 
             sender() ! features
         } else if (headPacket.isInstanceOf[SaslAuth]) {
@@ -307,13 +304,10 @@ class XmppStreamConnection extends Actor {
 
             sender() ! responseHead
 
-            val compression = <compression xmlns="http://jabber.org/features/compress">
-                <method>zlib</method>
-            </compression>
             val bind = <bind xmlns="urn:ietf:params:xml:ns:xmpp-bind"/>
             val session = <session xmlns="urn:ietf:params:xml:ns:xmpp-session"/>
             val register = <register xmlns='http://jabber.org/features/iq-register'/>
-            val features = Features(List(compression, bind, session, register))
+            val features = Features(List(bind, session, register))
             sender() ! features
 
             status = Status.PREPARE_TALK
@@ -369,8 +363,8 @@ class XmppStreamConnection extends Actor {
                         val query = extension.asInstanceOf[extensions.Query]
                         query.namespace.getOrElse("") match {
                             case "http://jabber.org/protocol/disco#items" =>
-                                val idValue = oId.getOrElse("")
-                                val toJid = oFrom.getOrElse(JID.EmptyJID).toString
+                                val idValue = oId.getOrElse("disco_1")
+                                val toJid = oFrom.getOrElse(jid).toString
                                 val xml = <iq from='localhost' type='result' id={idValue} to={toJid}>
                                     <query xmlns='http://jabber.org/protocol/disco#items'>
                                         <item jid='aa@localhost'/>
