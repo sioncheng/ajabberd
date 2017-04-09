@@ -93,10 +93,7 @@ object ExtensionsManager extends Logger
 
     private def getKey(builder:ExtensionBuilder[_]):String = getKey(builder.tag, builder.namespace)
     private def getKey(node:Node):String = getKey(node.label, node.scope.uri)
-    private def getKey(tag:String, namespace:String):String = {
-        println(s"****************** get key ${tag}~${namespace}")
-        tag + "~" + namespace
-    }
+    private def getKey(tag:String, namespace:String):String = tag + "~" + namespace
 
     // well known extensions
 

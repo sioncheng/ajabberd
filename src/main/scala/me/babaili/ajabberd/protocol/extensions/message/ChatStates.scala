@@ -20,6 +20,8 @@ object ActiveState {
     val namespace = ChatStates.namespace
 
     def apply(xml: Node): ActiveState = new ActiveState(xml)
+
+    def unapply(arg: ActiveState): Option[Node] = Some(arg.xml)
 }
 
 class ActiveState(xml: Node) extends Extension(xml) {
@@ -31,6 +33,8 @@ object InactiveState {
     val namespace = ChatStates.namespace
 
     def apply(xml: Node): InactiveState = new InactiveState(xml)
+
+    def unapply(arg: InactiveState): Option[Node] = Some(arg.xml)
 }
 
 class InactiveState (xml: Node) extends Extension(xml) {
@@ -42,6 +46,8 @@ object GoneState {
     val namespace = ChatStates.namespace
 
     def apply(xml: Node): GoneState = new GoneState(xml)
+
+    def unapply(arg: GoneState): Option[Node] = Some(arg.xml)
 }
 
 class GoneState (xml: Node) extends Extension(xml) {
@@ -53,6 +59,8 @@ object ComposingState {
     val namespace = ChatStates.namespace
 
     def apply(xml: Node): ComposingState = new ComposingState(xml)
+
+    def unapply(arg: ComposingState): Option[Node] = Some(arg.xml)
 }
 
 class ComposingState (xml: Node) extends Extension(xml) {
@@ -64,6 +72,8 @@ object PausedState {
     val namespace = ChatStates.namespace
 
     def apply(xml: Node): PausedState = new PausedState(xml)
+
+    def unapply(arg: PausedState): Option[Node] = Some(arg.xml)
 }
 
 class PausedState (xml: Node) extends Extension(xml) {
