@@ -7,20 +7,24 @@ import me.babaili.ajabberd.protocol.JID
   */
 
 object Passport {
+
+    def validate(user: String, password: String): Boolean = "" != password && queryUserPassword(user) == password
+
+
     def queryUserPassword(user: String): String = {
         user match {
             case "aa" => "bbb"
             case "bb" => "bbb"
-            case "cc" => "ccc"
+            case "cc" => "bbb"
             case _ => ""
         }
     }
 
     def queryUserJid(user: String): Option[String] = {
         user match {
-            case "aa" => Some("jid_aa")
-            case "bb" => Some("jid_bb")
-            case "cc" => Some("jid_cc")
+            case "aa" => Some("aa")
+            case "bb" => Some("bb")
+            case "cc" => Some("cc")
             case _ => None
         }
     }

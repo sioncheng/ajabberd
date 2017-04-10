@@ -10,18 +10,21 @@ import me.babaili.ajabberd.data.Passport
 /**
   * Created by cyq on 09/03/2017.
   */
-class MySaslServer {
+class MySaslServer(mechanism: String) {
 
     private val logger = Logger("me.babaili.ajabberd.auth.MySaslServer")
 
     private val props = new util.TreeMap[String, String]()
     props.put(Sasl.QOP, "auth")
 
-    private val saslServer = Sasl.createSaslServer("DIGEST-MD5", "xmpp", "localhost",props,new ServerCallbackHandler("localhost"))
+    private val saslServer = Sasl.createSaslServer(mechanism, "xmpp", "localhost",props,new ServerCallbackHandler("localhost"))
 
     private val token = new Array[Byte](0)
 
     def evaluateResponse(response: Array[Byte]) : (Boolean, Array[Byte]) = {
+        if (saslServer == null) {
+            throw new Exception(s"no mechanism ${mechanism}")
+        }
         if(response == null) {
             (false, saslServer.evaluateResponse(token))
         } else {

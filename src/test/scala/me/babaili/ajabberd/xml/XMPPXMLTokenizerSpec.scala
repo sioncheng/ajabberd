@@ -83,7 +83,7 @@ class XMPPXMLTokenizerSpec  extends FunSpecLike with Matchers {
 
                     val packets = XMPPXMLTokenizer.emit(xMLEvents)
 
-                    println(s"=========== packets length ${packets._1.length} ${packets._2.length}")
+                    println(s"=========== packets length ${packets._1} ${packets._2.length}")
 
                     val head = packets._1.head
 

@@ -2,16 +2,18 @@ package me.babaili.ajabberd.xmpp
 
 import akka.actor.{Actor, ActorRef}
 import me.babaili.ajabberd.auth.MySaslServer
-import me.babaili.ajabberd.data.Passport
+import me.babaili.ajabberd.data.{Passport, Roster, VCard}
 import me.babaili.ajabberd.protocol._
 import me.babaili.ajabberd.util
 import me.babaili.ajabberd.global.ApplicationContext
 import me.babaili.ajabberd.protocol.extensions.message._
 import me.babaili.ajabberd.protocol.message.Message
-import me.babaili.ajabberd.util.Logger
+import me.babaili.ajabberd.util.{Logger, XMLUtil}
+import org.jivesoftware.smack.sasl.packet.SaslStreamElements.SASLFailure
 import sun.misc.{BASE64Decoder, BASE64Encoder}
 
 import scala.collection.immutable.HashMap
+import scala.xml.{Elem, NodeSeq}
 
 
 /**
@@ -46,7 +48,7 @@ class XmppStreamConnection extends Actor {
     val logger = new Logger {}
 
     var status = Status.INIT
-    var saslServer = new MySaslServer()
+    var saslServer:MySaslServer = null
     var clientConnection: ActorRef = null
     var jid: JID = new JID("aa","localhost","")
     var uid: String = ""
@@ -240,13 +242,36 @@ class XmppStreamConnection extends Actor {
             val auth = headPacket.asInstanceOf[SaslAuth]
             auth.mechanism match {
                 case SaslMechanism.Plain =>
-                    val decodedString = (new BASE64Decoder()).decodeBuffer(auth.value)
-                    logger.debug(s"plain auth ${decodedString}")
-                    sender() ! SaslSuccess(auth.value)
-                    status = Status.EXPECT_NEW_SESSION
+                    val decodedBytes = (new BASE64Decoder()).decodeBuffer(auth.value)
 
+                    decodedBytes.isEmpty match {
+                        case true =>
+                            sender() ! SaslError(<invalid-authzid/>)
+                        case false =>
+                            val decodedString = new String(decodedBytes, "UTF-8")
+                            decodedBytes.foreach(b => println(s"bbbbbbb ==> ${b}"))
+                            logger.debug(s"plain auth ${decodedBytes.length} ${decodedString}")
+                            import java.util.StringTokenizer
+                            val tokens = new StringTokenizer(decodedString, "\0")
+                            if (tokens.countTokens() >= 2) {
+                                val user = tokens.nextToken()
+                                val password = tokens.nextToken()
+                                if (Passport.validate(user, password)) {
+                                    uid = user
+                                    Passport.queryUserJid(uid).foreach(x => jid = JID(x + "@localhost"))
+                                    logger.debug(s"sasl success ${uid} ${jid.toString}")
+                                    status = Status.EXPECT_NEW_SESSION
+                                    sender() ! SaslSuccess(auth.value)
+                                } else {
+                                    sender() ! SaslError(<invalid-authzid/>)
+                                }
+                            } else {
+                                sender() ! SaslError(<invalid-authzid/>)
+                            }
+                    }
                 case SaslMechanism.DiagestMD5 =>
                     logger.debug("digest md5 auth")
+                    saslServer = new MySaslServer("DIGEST-MD5")
                     val (_, response) = saslServer.evaluateResponse(null)
                     val challengeBase64 = (new BASE64Encoder()).encode(response).replace("\r","").replace("\n","")
                     logger.debug(s"challengeBase64 ${challengeBase64}")
@@ -292,7 +317,6 @@ class XmppStreamConnection extends Actor {
         if (headPacket.isInstanceOf[StreamHead]) {
             val streamHead = headPacket.asInstanceOf[StreamHead]
             val fromClient = streamHead.attributes.get("from").getOrElse("")
-            uid = fromClient.split("@")(0)
 
             val responseAttributes = HashMap[String, String]("from" -> "localhost",
                 "id" -> fromClient,
@@ -335,7 +359,7 @@ class XmppStreamConnection extends Actor {
                         }
                         val xml = <iq type='result' id={idValue}>
                             <bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>
-                                <jid>aa@localhost/{resource}</jid>
+                                <jid>{jid.toString}</jid>
                             </bind>
                         </iq>
 
@@ -413,7 +437,7 @@ class XmppStreamConnection extends Actor {
                     ns match {
                         case "http://jabber.org/protocol/disco#items" =>
                             val idValue = oId.getOrElse("")
-                            val toJid = oFrom.getOrElse(JID.EmptyJID).toString
+                            val toJid = oFrom.getOrElse(jid).toString
 
                             val xml = <iq from='localhost' type='result' id={idValue} to={toJid}>
                                 <query xmlns='http://jabber.org/protocol/disco#items'>
@@ -424,28 +448,24 @@ class XmppStreamConnection extends Actor {
                             sender() ! iq.Result(xml)
                         case "jabber:iq:roster" =>
                             val idValue = oId.getOrElse("")
-                            val toJid = oFrom.getOrElse(JID.EmptyJID).toString
+                            val toJid = oFrom.getOrElse(jid).toString
 
-                            val xml = <iq id={idValue} type="result" to={toJid}>
-                                <query xmlns="jabber:iq:roster">
-                                    <item jid="aa@localhost" name="aa" subscription="both">
-                                        <group>Friends</group>
-                                    </item>
-                                    <item jid="bb@localhost" name="bb" subscription="both">
-                                        <group>Friends</group>
-                                    </item>
-                                    <item jid="cc@localhost" name="cc" subscription="both">
-                                        <group>Friends</group>
-                                    </item>
-                                </query>
+                            var parent:Elem = <query xmlns="jabber:iq:roster"></query>
+                            val friends = Roster.getFriends(uid)
+                            if (!friends.isEmpty) {
+                                friends.get.foreach(friend => parent = XMLUtil.addChild(parent,
+                                        <item jid={friend.toString} name={friend.node} subscription="both"><group>Friends</group></item>))
+                            }
+                            val xml = <iq id={idValue} type="result" to={toJid.toString}>
+                                {parent}
                             </iq>
 
-                            logger.debug(s"your friends ${xml.toString()}")
+                            logger.debug(s"hi ${uid} your friends ${xml.toString()}")
                             sender() ! iq.Result(xml)
                         case "http://jabber.org/protocol/disco#info" =>
                             //xep-0030
                             val idValue = oId.getOrElse("")
-                            val toJid = oFrom.getOrElse(JID.EmptyJID).toString
+                            val toJid = oFrom.getOrElse(jid).toString
 
                             val xml = <iq type='result' from='localhost' to={toJid} id={idValue}>
                                 <query xmlns='http://jabber.org/protocol/disco#info'>
@@ -500,84 +520,17 @@ class XmppStreamConnection extends Actor {
                     logger.debug(s"head string ${headString}")
 
                     val idValue = oId.getOrElse("v1")
-                    val fromValue = oTo.getOrElse(JID.EmptyJID).toString()
+                    val fromJid = oTo.getOrElse(jid)
                     if (headString.indexOf("vCard") > 0) {
-                        val xml = <iq id={idValue} from={fromValue} to='aa@localhost' type='result'>
-                            <vCard xmlns='vcard-temp'>
-                                <FN>Peter Saint-Andre</FN>
-                                <N>
-                                    <FAMILY>Saint-Andre</FAMILY>
-                                    <GIVEN>Peter</GIVEN>
-                                    <MIDDLE/>
-                                </N>
-                                <NICKNAME>stpeter</NICKNAME>
-                                <URL>http://www.xmpp.org/xsf/people/stpeter.shtml</URL>
-                                <BDAY>1966-08-06</BDAY>
-                                <ORG>
-                                    <ORGNAME>XMPP Standards Foundation</ORGNAME>
-                                    <ORGUNIT/>
-                                </ORG>
-                                <TITLE>Executive Director</TITLE>
-                                <ROLE>Patron Saint</ROLE>
-                                <TEL>
-                                    <WORK/>
-                                    <VOICE/> <NUMBER>303-308-3282</NUMBER>
-                                </TEL>
-                                <TEL>
-                                    <WORK/>
-                                    <FAX/>
-                                    <NUMBER/>
-                                </TEL>
-                                <TEL>
-                                    <WORK/>
-                                    <MSG/>
-                                    <NUMBER/>
-                                </TEL>
-                                <ADR>
-                                    <WORK/>
-                                    <EXTADD>Suite 600</EXTADD>
-                                    <STREET>1899 Wynkoop Street</STREET>
-                                    <LOCALITY>Denver</LOCALITY>
-                                    <REGION>CO</REGION>
-                                    <PCODE>80202</PCODE>
-                                    <CTRY>USA</CTRY>
-                                </ADR>
-                                <TEL>
-                                    <HOME/>
-                                    <VOICE/> <NUMBER>303-555-1212</NUMBER>
-                                </TEL>
-                                <TEL>
-                                    <HOME/>
-                                    <FAX/>
-                                    <NUMBER/>
-                                </TEL>
-                                <TEL>
-                                    <HOME/>
-                                    <MSG/>
-                                    <NUMBER/>
-                                </TEL>
-                                <ADR>
-                                    <HOME/>
-                                    <EXTADD/>
-                                    <STREET/>
-                                    <LOCALITY>Denver</LOCALITY>
-                                    <REGION>CO</REGION>
-                                    <PCODE>80209</PCODE>
-                                    <CTRY>USA</CTRY>
-                                </ADR>
-                                <EMAIL>
-                                    <INTERNET/>
-                                    <PREF/> <USERID>stpeter@jabber.org</USERID>
-                                </EMAIL>
-                                <JABBERID>stpeter@jabber.org</JABBERID>
-                                <DESC>
-                                    More information about me is located on my
-                                    personal website: http://www.saint-andre.com/
-                                </DESC>
-                            </vCard>
-                        </iq>
+                        val xml = <iq id={idValue} from={fromJid.toString} to={jid.toString} type='result'></iq>
+                        val vCard = VCard.getVcard(fromJid.node)
+                        vCard.isEmpty match {
+                            case true =>
+                                sender() ! iq.Result(xml)
+                            case false =>
+                                sender() ! iq.Result(util.XMLUtil.addChild(xml, vCard.get))
+                        }
 
-                        sender() ! iq.Result(xml)
                     } else if (headString.indexOf("jabber:iq:last") > 0) {
                         //https://xmpp.org/extensions/xep-0012.html
                         val idValue = oId.getOrElse("last_1")
@@ -634,7 +587,7 @@ class XmppStreamConnection extends Actor {
             inMessage.extensions.isEmpty match {
                 case true =>
                     val echoMessage = <message from={to.toString()} to={from.toString()} type="chat" id={idValue}>
-                        <body>I know what you said: {inMessage.body.getOrElse("")}</body>
+                        <body>I know what you said:{inMessage.body.getOrElse("")}</body>
                         <thread>{inMessage.thread.getOrElse("")}</thread>
                         <active xmlns='http://jabber.org/protocol/chatstates'/>
                     </message>
@@ -644,7 +597,7 @@ class XmppStreamConnection extends Actor {
                     inMessage.extensions.get.head match {
                         case ActiveState(xml) =>
                             val echoMessage = <message from={to.toString()} to={from.toString()} type="chat" id={idValue}>
-                                <body>I know what you said: {inMessage.body.getOrElse("")}</body>
+                                <body>I know what you said:{inMessage.body.getOrElse("")}</body>
                                 <thread>{inMessage.thread.getOrElse("")}</thread>
                                 <active xmlns='http://jabber.org/protocol/chatstates'/>
                             </message>
@@ -661,9 +614,9 @@ class XmppStreamConnection extends Actor {
 
                     }
             }
-
-
-
+        } else if(headPacket.isInstanceOf[SaslAuth]) {
+            logger.warn("saal auth? why ?????")
+            sender() ! SaslSuccess()
         } else {
             supported = false
             logger.warn(s"unknown packet ${headPacket.toString()} duration status ${status}")
