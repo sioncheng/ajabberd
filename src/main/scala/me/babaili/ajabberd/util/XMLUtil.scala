@@ -10,11 +10,11 @@ object XMLUtil {
     def addChild(parent:Elem, child:Elem) = {
         parent match {
             case xml.Elem(prefix, label, attributes, scope, children @ _*) => {
-                println("====== matched")
+                //println("====== matched")
                 xml.Elem(prefix, label, attributes, scope, children.isEmpty, children ++ child: _*)
             }
             case other => {
-                println("====== other")
+                //println("====== other")
                 other
             }
         }

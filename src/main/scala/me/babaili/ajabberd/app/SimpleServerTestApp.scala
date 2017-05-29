@@ -19,7 +19,7 @@ object SimpleServerTestApp extends App {
 
     ApplicationContext.start(actorSystem)
 
-    val listener = actorSystem.actorOf(Props(classOf[TcpListener], "localhost", 5222))
+    val listener = actorSystem.actorOf(Props(classOf[TcpListener], "", 5222))
 
 
     Thread.sleep(30 * 60 * 1000)

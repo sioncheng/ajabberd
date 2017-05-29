@@ -10,7 +10,7 @@ import me.babaili.ajabberd.net.TcpConnectionHandler.CloseAnyway
 import me.babaili.ajabberd.protocol.{JID, Packet, SaslSuccess, TlsProceed}
 import me.babaili.ajabberd.util.Logger
 import me.babaili.ajabberd.xml.{XMPPXMLTokenizer, XmlTokenizer}
-import me.babaili.ajabberd.xmpp.{XmppEvents, XmppStreamConnection}
+import me.babaili.ajabberd.xmpp.{XmppEvents, XmppPackets, XmppStreamConnection}
 
 /**
   * Created by sion on 2/4/17.
@@ -65,7 +65,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
                                     if (xmppConnection == null) {
                                         xmppConnection = context.actorOf(Props(classOf[XmppStreamConnection]))
                                     }
-                                    xmppConnection ! packets.get
+                                    xmppConnection ! XmppPackets(packets.get)
                                     if (remainedXmlEvents.length > 0) {
                                         continue = true
                                     } else {
@@ -123,7 +123,7 @@ class TcpConnectionHandler(tcpListener: ActorRef, name: String) extends Actor {
                             if (xmppConnection == null) {
                                 xmppConnection = context.actorOf(Props(classOf[XmppStreamConnection]))
                             }
-                            xmppConnection ! packets.get
+                            xmppConnection ! XmppPackets(packets.get)
                             if (remainedXmlEvents.length > 0) {
                                 continue = true
                             } else {

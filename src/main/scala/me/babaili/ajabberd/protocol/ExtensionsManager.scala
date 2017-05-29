@@ -3,12 +3,9 @@ package protocol
 
 import scala.collection._
 import scala.xml._
-
 import me.babaili.ajabberd.util._
-
 import me.babaili.ajabberd.protocol._
 import me.babaili.ajabberd.protocol.extensions._
-
 import me.babaili.ajabberd.protocol.Protocol._
 
 trait ExtensionBuilder[T <: Extension]
@@ -133,4 +130,6 @@ object ExtensionsManager extends Logger
     registerBuilder(extensions.message.ComposingStateBuilder)
     registerBuilder(extensions.message.PausedStateBuilder)
     registerBuilder(extensions.message.GoneStateBuilder)
+    /* vcard */
+    registerBuilder(extensions.VCardBuilder)
 }

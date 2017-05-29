@@ -5,11 +5,11 @@ import scala.xml.Elem
 /**
   * Created by cyq on 10/04/2017.
   */
-class VCard {
+class VCardManager {
 
 }
 
-object VCard {
+object VCardManager {
     def getVcard(uid: String): Option[Elem] = {
         uid match {
             case "aa" =>

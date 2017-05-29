@@ -117,6 +117,13 @@ class SslEngine extends Actor {
             if (sourceSender == null) {
                 sourceSender = sender()
             }
+            if (peerNetData.capacity() < data.length) {
+                logger.debug("enlarge the old buffer")
+                val newBuffer = ByteBuffer.allocate(data.length + peerNetData.position())
+                peerNetData.flip()
+                newBuffer.put(peerNetData)
+                peerNetData = newBuffer
+            }
             peerNetData.put(data)
             if (!finishedHandshake) {
                 doHandshake()

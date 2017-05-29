@@ -2,10 +2,11 @@ package me.babaili.ajabberd.xmpp
 
 import akka.actor.{Actor, ActorRef}
 import me.babaili.ajabberd.auth.MySaslServer
-import me.babaili.ajabberd.data.{Passport, Roster, VCard}
+import me.babaili.ajabberd.data.{Passport, Roster, VCardManager}
 import me.babaili.ajabberd.protocol._
 import me.babaili.ajabberd.util
 import me.babaili.ajabberd.global.ApplicationContext
+import me.babaili.ajabberd.protocol.extensions.{Query, VCard}
 import me.babaili.ajabberd.protocol.extensions.message._
 import me.babaili.ajabberd.protocol.message.Message
 import me.babaili.ajabberd.util.{Logger, XMLUtil}
@@ -54,9 +55,9 @@ class XmppStreamConnection extends Actor {
     var uid: String = ""
 
     def receive: Receive = {
-        case packets: List[Packet] =>
-            logger.debug(s"received packets ${packets.length}")
-            handlePackets(packets)
+        case packets: XmppPackets =>
+            logger.debug(s"received packets ${packets.packets.length}")
+            handlePackets(packets.packets)
         case XmppEvents.Response(action, data) =>
             action match {
                 case XmppEvents.IqResult =>
@@ -379,6 +380,14 @@ class XmppStreamConnection extends Actor {
                         }
 
                         logger.debug(s"${query.toString()}")
+                    } else if (extension.isInstanceOf[extensions.VCard]) {
+                        //
+                        val vCard = extension.asInstanceOf[VCard]
+                        logger.info(s"iq set for vcard ${vCard}")
+                        val idValue = oId.getOrElse("bind_2")
+                        val xml = <iq from='localhost' type='result' id={idValue}/>
+
+                        sender() ! iq.Result(xml)
                     } else {
                         logger.warn(s"cant deal with iq set duration status ${status}")
                     }
@@ -432,87 +441,109 @@ class XmppStreamConnection extends Actor {
         } else if (headPacket.isInstanceOf[iq.Get]) {
             headPacket match {
                 case get @ iq.Get(oId, oTo, oFrom, Some(extension)) =>
-                    val query = extension.asInstanceOf[extensions.Query]
-                    val ns = query.namespace.getOrElse("")
-                    ns match {
-                        case "http://jabber.org/protocol/disco#items" =>
-                            val idValue = oId.getOrElse("")
-                            val toJid = oFrom.getOrElse(jid).toString
 
-                            val xml = <iq from='localhost' type='result' id={idValue} to={toJid}>
-                                <query xmlns='http://jabber.org/protocol/disco#items'>
-                                    <item jid='localhost'/>
-                                </query>
-                            </iq>
+                    extension match {
+                        case query: Query =>
+                            val ns = query.namespace.getOrElse("")
+                            ns match {
+                                case "http://jabber.org/protocol/disco#items" =>
+                                    val idValue = oId.getOrElse("")
+                                    val toJid = oFrom.getOrElse(jid).toString
 
-                            sender() ! iq.Result(xml)
-                        case "jabber:iq:roster" =>
-                            val idValue = oId.getOrElse("")
-                            val toJid = oFrom.getOrElse(jid).toString
+                                    val xml = <iq from='localhost' type='result' id={idValue} to={toJid}>
+                                        <query xmlns='http://jabber.org/protocol/disco#items'>
+                                            <item jid='localhost'/>
+                                        </query>
+                                    </iq>
 
-                            var parent:Elem = <query xmlns="jabber:iq:roster"></query>
-                            val friends = Roster.getFriends(uid)
-                            if (!friends.isEmpty) {
-                                friends.get.foreach(friend => parent = XMLUtil.addChild(parent,
-                                        <item jid={friend.toString} name={friend.node} subscription="both"><group>Friends</group></item>))
+                                    sender() ! iq.Result(xml)
+                                case "jabber:iq:roster" =>
+                                    val idValue = oId.getOrElse("")
+                                    val toJid = oFrom.getOrElse(jid).toString
+
+                                    var parent:Elem = <query xmlns="jabber:iq:roster"></query>
+                                    val friends = Roster.getFriends(uid)
+                                    if (!friends.isEmpty) {
+                                        friends.get.foreach(friend => parent = XMLUtil.addChild(parent,
+                                            <item jid={friend.toString} name={friend.node} subscription="both"><group>Friends</group></item>))
+                                    }
+                                    val xml = <iq id={idValue} type="result" to={toJid.toString}>
+                                        {parent}
+                                    </iq>
+
+                                    logger.debug(s"hi ${uid} your friends ${xml.toString()}")
+                                    sender() ! iq.Result(xml)
+                                case "http://jabber.org/protocol/disco#info" =>
+                                    //xep-0030
+                                    val idValue = oId.getOrElse("")
+                                    val toJid = oFrom.getOrElse(jid).toString
+
+                                    val xml = <iq type='result' from='localhost' to={toJid} id={idValue}>
+                                        <query xmlns='http://jabber.org/protocol/disco#info'>
+                                            <identity
+                                            category="server" type="im" name="Tigase ver. 0.0.0-0"/>
+                                            <identity
+                                            category='conference' type='text' name='Play-Specific Chatrooms'/>
+                                            <identity
+                                            category='directory' type='chatroom' name='Play-Specific Chatrooms'/>
+                                            <feature var='http://jabber.org/protocol/disco#info'/>
+                                            <feature var='http://jabber.org/protocol/disco#items'/>
+                                            <feature var='http://jabber.org/protocol/muc'/>
+                                            <feature var='jabber:iq:register'/>
+                                            <feature var='jabber:iq:search'/>
+                                            <feature var='jabber:iq:time'/>
+                                            <feature var='jabber:iq:version'/>
+                                        </query>
+                                    </iq>
+
+                                    logger.debug(s"my services ${xml.toString()}")
+                                    sender() ! iq.Result(xml)
+                                case extensions.get.PrivateQuery.namespace =>
+                                    val result = iq.Result(Some(oId.getOrElse("private_1")),
+                                        Some(oFrom.getOrElse(jid)),
+                                        Some(JID("@localhost")),
+                                        Some(extension))
+                                    sender() ! result
+                                case extensions.get.LastQuery.namespace =>
+                                    val xml = <iq
+                                    from='localhost'
+                                    id={oId.getOrElse("last_1")}
+                                    to={oFrom.getOrElse(jid).toString()}
+                                    type='result'>
+                                        <query xmlns='jabber:iq:last' seconds='903'>Heading Home</query>
+                                    </iq>
+
+                                    logger.debug("https://xmpp.org/extensions/xep-0012.html")
+                                    sender() ! iq.Result(xml)
+                                case "" =>
+                                    logger.warn("??? empty namespace")
+                                case x =>
+                                    logger.error(s"??? unknown namespace ${x} of iq get on status ${status}")
+
+                                    sender() ! iq.Result(oId,oTo,oFrom,None)
                             }
-                            val xml = <iq id={idValue} type="result" to={toJid.toString}>
-                                {parent}
-                            </iq>
-
-                            logger.debug(s"hi ${uid} your friends ${xml.toString()}")
-                            sender() ! iq.Result(xml)
-                        case "http://jabber.org/protocol/disco#info" =>
-                            //xep-0030
-                            val idValue = oId.getOrElse("")
-                            val toJid = oFrom.getOrElse(jid).toString
-
-                            val xml = <iq type='result' from='localhost' to={toJid} id={idValue}>
-                                <query xmlns='http://jabber.org/protocol/disco#info'>
-                                    <identity
-                                    category="server" type="im" name="Tigase ver. 0.0.0-0"/>
-                                    <identity
-                                    category='conference' type='text' name='Play-Specific Chatrooms'/>
-                                    <identity
-                                    category='directory' type='chatroom' name='Play-Specific Chatrooms'/>
-                                    <feature var='http://jabber.org/protocol/disco#info'/>
-                                    <feature var='http://jabber.org/protocol/disco#items'/>
-                                    <feature var='http://jabber.org/protocol/muc'/>
-                                    <feature var='jabber:iq:register'/>
-                                    <feature var='jabber:iq:search'/>
-                                    <feature var='jabber:iq:time'/>
-                                    <feature var='jabber:iq:version'/>
-                                </query>
-                            </iq>
-
-                            logger.debug(s"my services ${xml.toString()}")
-                            sender() ! iq.Result(xml)
-                        case extensions.get.PrivateQuery.namespace =>
-                            val result = iq.Result(Some(oId.getOrElse("private_1")),
-                                Some(oFrom.getOrElse(jid)),
-                                Some(JID("@localhost")),
-                                Some(extension))
-                            sender() ! result
-                        case extensions.get.LastQuery.namespace =>
-                            val xml = <iq
-                            from='localhost'
-                            id={oId.getOrElse("last_1")}
-                            to={oFrom.getOrElse(jid).toString()}
-                            type='result'>
-                                <query xmlns='jabber:iq:last' seconds='903'>Heading Home</query>
-                            </iq>
-
-                            logger.debug("https://xmpp.org/extensions/xep-0012.html")
-                            sender() ! iq.Result(xml)
-                        case "" =>
-                            logger.warn("??? empty namespace")
-                        case x =>
-                            logger.error(s"??? unknown namespace ${x} of iq get on status ${status}")
-
-                            sender() ! iq.Result(oId,oTo,oFrom,None)
+                        case vcard: VCard =>
+                            ///
+                            logger.info(s"******************** vcard ${vcard}")
+                            val idValue = oId.getOrElse("v1")
+                            val fromJid = oTo.getOrElse(jid)
+                            val xml = <iq id={idValue} to={jid.toString} type='result'></iq>
+                            val vCard = VCardManager.getVcard(fromJid.node)
+                            vCard.isEmpty match {
+                                case true =>
+                                    sender() ! iq.Result(xml)
+                                case false =>
+                                    sender() ! iq.Result(util.XMLUtil.addChild(xml, vCard.get))
+                            }
+                        case x: Any =>
+                            logger.warn(s"can't understand the get extension ${x}")
                     }
 
+
+
                 case get @ iq.Get(oId, oTo, oFrom, None) =>
+                    //example
+                    //<iq type="get" from="aa@localhost" to="localhost" id="rvTo2-26"><services xmlns="http://jabber.org/protocol/jinglenodes"/></iq>
                     logger.warn("??? empty extension")
 
                     //we might need to build more extension class
@@ -520,10 +551,10 @@ class XmppStreamConnection extends Actor {
                     logger.debug(s"head string ${headString}")
 
                     val idValue = oId.getOrElse("v1")
-                    val fromJid = oTo.getOrElse(jid)
+                    val fromJid = oFrom.getOrElse(jid)
                     if (headString.indexOf("vCard") > 0) {
                         val xml = <iq id={idValue} from={fromJid.toString} to={jid.toString} type='result'></iq>
-                        val vCard = VCard.getVcard(fromJid.node)
+                        val vCard = VCardManager.getVcard(fromJid.node)
                         vCard.isEmpty match {
                             case true =>
                                 sender() ! iq.Result(xml)
@@ -549,7 +580,10 @@ class XmppStreamConnection extends Actor {
                         </iq>
                         sender() ! iq.Result(xml)
                     } else {
-                        sender() ! iq.Result(oId,oTo,Some(oFrom.getOrElse(jid)),None)
+                        val xml = <iq from="localhost"
+                                      to={oFrom.getOrElse(jid).toString()}
+                                      id={idValue} type="result"/>
+                        sender() ! iq.Result(xml)
                     }
                 case x =>
                     logger.warn(s"unknown get ${x} duration status ${status}")
