@@ -10,6 +10,7 @@ import me.babaili.ajabberd.protocol.extensions.{Query, VCard}
 import me.babaili.ajabberd.protocol.extensions.message._
 import me.babaili.ajabberd.protocol.message.Message
 import me.babaili.ajabberd.util.{Logger, XMLUtil}
+import me.babaili.ajabberd.xmpp.XmppEvents.{Command, IqBind, MessageRequest}
 import org.jivesoftware.smack.sasl.packet.SaslStreamElements.SASLFailure
 import sun.misc.{BASE64Decoder, BASE64Encoder}
 
@@ -51,7 +52,7 @@ class XmppStreamConnection extends Actor {
     var status = Status.INIT
     var saslServer:MySaslServer = null
     var clientConnection: ActorRef = null
-    var jid: JID = new JID("aa","localhost","")
+    var jid: JID = JID.EmptyJID
     var uid: String = ""
 
     def receive: Receive = {
@@ -365,6 +366,9 @@ class XmppStreamConnection extends Actor {
                         </iq>
 
                         sender() ! iq.Result(xml)
+
+                        ApplicationContext.getXmppServer() ! Command(IqBind,uid,Some(jid),headPacket)
+
                     } else if (extension.isInstanceOf[extensions.session.Session]) {
                         val idValue = oId.getOrElse("bind_2")
                         val xml = <iq from='localhost' type='result' id={idValue}/>
@@ -616,6 +620,7 @@ class XmppStreamConnection extends Actor {
             val from = inMessage.from.getOrElse(jid)
             val to = inMessage.to.get
             val idValue = inMessage.id.getOrElse("chat_1")
+
             logger.debug(s"in message ${from.toString()} ${to.toString()} ${inMessage.body.getOrElse("")}")
 
             inMessage.extensions.isEmpty match {
@@ -627,6 +632,8 @@ class XmppStreamConnection extends Actor {
                     </message>
 
                     sender() ! Message(echoMessage)
+
+                    ApplicationContext.getXmppServer() ! Command(MessageRequest, uid, Some(from), headPacket)
                 case false =>
                     inMessage.extensions.get.head match {
                         case ActiveState(xml) =>
@@ -637,6 +644,8 @@ class XmppStreamConnection extends Actor {
                             </message>
 
                             sender() ! Message(echoMessage)
+
+                            ApplicationContext.getXmppServer() ! Command(MessageRequest, uid, Some(from), headPacket)
                         case ComposingState(xml) =>
                             logger.debug(s"{}{}{}{}{} composing ${xml.text}")
                         case GoneState(xml) =>

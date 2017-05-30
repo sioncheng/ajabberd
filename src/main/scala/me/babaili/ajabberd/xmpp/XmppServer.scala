@@ -5,8 +5,10 @@ import me.babaili.ajabberd.protocol.extensions.{bind, session}
 import akka.actor.Actor
 import me.babaili.ajabberd.data.Passport
 import me.babaili.ajabberd.global.ApplicationContext
-import me.babaili.ajabberd.protocol.message.Chat
+import me.babaili.ajabberd.protocol.message.{Chat, Message}
 import me.babaili.ajabberd.util.Logger
+
+import scala.collection.mutable
 
 /**
   * Created by cyq on 27/03/2017.
@@ -19,66 +21,57 @@ object XmppServer {
 class XmppServer extends Actor {
 
     val logger = new Logger {}
+    val connections: scala.collection.mutable.HashMap[JID, ClientActorRefs] =
+        new mutable.HashMap[JID, ClientActorRefs]()
 
     import  XmppEvents._
 
     def receive = {
-        case iqb @ Command(IqBind, uid, _, data) =>
+        case iqb @ Command(IqBind, uid, Some(jid), data) =>
             //
-            val iqBind = data.asInstanceOf[iq.IQ]
-
-            iqBind match {
-                case iq.Set (_, _, _, Some (request: bind.BindRequest) ) =>
-                    val id = iqBind.id.getOrElse("")
-                    var jidString = Passport.queryUserJid(uid).getOrElse("")
-                    val jid = JID (jidString, ApplicationContext.getService (), request.resource.getOrElse (id.toString) )
-
-                    val iqXml = <iq type='result' id={id}>
-                    <bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'> <jid>{jid.toString ()}</jid> </bind>
-                    </iq>
-
-                    val iqResult = iq.Result (iqXml)
-
-                    sender () ! Response (IqResult, iqResult)
-                    sender () ! JidAssign (jid, uid)
-                case set @ iq.Set(_, _, _, Some (_: session.Session)) =>
-                    val res = set.result(Some(session.Session()))
-                    sender () ! Response (IqResult, res)
-                case get @ iq.Get(oid, oto, ofrom, ext) =>
-                    logger.debug(s"get ${get}")
-                    val id = oid.getOrElse("")
-                    val xml = <iq type='result' id={id}>
-                        <query xmlns='jabber:iq:auth'>
-                            <username/>
-                            <password/>
-                            <digest/>
-                            <resource/>
-                        </query>
-                    </iq>
-                    val res = iq.Result(xml)
-                    sender() ! Response(IqResult, res)
-                case x =>
-                    logger.warn(s"what iq? ${x}")
+            logger.info(s"iq bind ${uid} ${jid} ${data}")
+            if (!connections.contains(jid.bare)) {
+                connections.put(jid.bare, new ClientActorRefs(jid.bare))
             }
+            val clientActorRefs = connections.get(jid.bare).get
+            val carNew = ClientActorRef(1, jid, sender())
+            val car = clientActorRefs.add(carNew)
+            if (!car.isEmpty) {
+                logger.warn(s"same client info existed ${car}")
+            }
+            logger.info(s"add client actor ref ${carNew}")
         case msg @ Command(MessageRequest, uid, jid, data) =>
             data match {
                 case chat : message.Chat =>
-                    logger.warn(s"chat ${chat}")
+                    logger.info(s"chat ${chat}")
                     val to = chat.to.getOrElse(JID("","",""))
                     if (to.isEmpty) {
                         logger.warn("have no idea to whom")
-                    }
+                    } else {
 
-                    val from = chat.from.getOrElse(jid.getOrElse(JID.EmptyJID))
-                    if (from.isEmpty) {
-                        logger.warn("have no idea from where")
-                    }
+                        val from = chat.from.getOrElse(jid.getOrElse(JID.EmptyJID))
+                        if (from.isEmpty) {
+                            logger.warn("have no idea from where")
+                        }
 
-                    val res = Chat(Some(from), Some(JID(to.node, ApplicationContext.getService(), "")), Some("what are you doing"))
-                    sender() ! Response(MessageResponse, res)
+                        val clientActorRefs = connections.get(to.bare)
+                        if (clientActorRefs.isEmpty) {
+                            //
+                            logger.warn(s"${to} is not online, will store the message.")
+                        } else {
+                            val car = clientActorRefs.get.first().get
+
+                            val responseXml = <message type="chat" from={from.toString} to={car.jid.toString}>
+                                <body>{chat.body.getOrElse("?")}</body>
+                            </message>
+
+                            car.actor ! Response(MessageResponse, Message(responseXml))
+                        }
+
+                    }
 
                 case _ =>
-                    logger.warn("？？？？ message")
+                    logger.warn("???????message")
             }
             logger.warn(s"${data.isInstanceOf[message.Chat]}")
             logger.warn(s"${data}")
