@@ -43,16 +43,21 @@ object SimpleSmackClientTestApp extends App {
 
     //new Java7SmackInitializer().initialize()
 
+    val trustPath = getClass().getResource("/netty/client/cChat.jks").getPath()
+    //System.setProperty("javax.net.ssl.trustStore", trustPath)
+    //System.setProperty("javax.net.debug", "all")
+
     val connectionConfiguration = XMPPTCPConnectionConfiguration
         .builder()
-        .setServiceName("localhost")
-        .setHost("localhost")
+        .setServiceName("im.ctrip.com")
+        .setHost("im.ctrip.com")
         .setPort(5222)
         .setDebuggerEnabled(true)
-        .setUsernameAndPassword("aa", "bbb")
+        .setUsernameAndPassword("13764096288", "bbb")
+        //.setKeystoreType(trustPath)
         //.setUsernameAndPassword("13764096288","13764096288")
         .setResource("Android")
-        .setSecurityMode(ConnectionConfiguration.SecurityMode.ifpossible)
+        .setSecurityMode(ConnectionConfiguration.SecurityMode.disabled)
         .setHostnameVerifier(new HostnameVerifier {
             override def verify(s: String, sslSession: SSLSession) = {
                 logger.debug(s"s ${s} sslSession ${sslSession.getPeerHost()}")
@@ -61,9 +66,7 @@ object SimpleSmackClientTestApp extends App {
         })
         .build()
 
-    val trustPath = getClass().getResource("/netty/client/cChat.jks").getPath()
-    System.setProperty("javax.net.ssl.trustStore", trustPath)
-    //System.setProperty("javax.net.debug", "all")
+
 
     val conn = new XMPPTCPConnection(connectionConfiguration)
 
@@ -78,7 +81,7 @@ object SimpleSmackClientTestApp extends App {
 
     val stanzaListener = new StanzaListener {
         override def processPacket(packet: Stanza): Unit = {
-
+            logger.debug(packet.toString)
         }
     }
     val stanzaFilter = new StanzaFilter {
@@ -119,10 +122,12 @@ object SimpleSmackClientTestApp extends App {
     */
 
 
+    Thread.sleep(2000)
+
 
     val hello = new Message()
     //hello.setFrom("13764096288")
-    hello.setTo("13764096288")
+    hello.setTo("13764096288@im.ctrip.com")
     hello.setType(Message.Type.chat)
     hello.setBody("hello")
     hello.setThread("hello-1")
